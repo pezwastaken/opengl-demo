@@ -1,6 +1,7 @@
 #include "shader.hh"
 #include <GLES2/gl2.h>
 #include <cstdint>
+#include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/vector_float3.hpp>
@@ -63,6 +64,10 @@ static constexpr u32 indices[] = {
 };
 
 static Shader shader_program;
+
+static glm::mat4 model(1.0F);
+static glm::mat4 view(1.0F);
+static glm::mat4 projection;
 
 
 u32 create_shader_program_obj(std::vector<uint32_t> shaders)
@@ -238,8 +243,29 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     //bind the correct VAO (suppose multiple objects)
     glBindVertexArray(VAO);
 
-    return SDL_APP_CONTINUE;
 
+    //model matrix
+    //tilt the objects by -90 degrees along the x axis
+    model = glm::rotate(model, glm::radians(-90.0F), glm::vec3(1.0F, 0.0F, 0.0F));
+
+    //view matrix: move everything in front so that it is the same as moving
+    //the camera backwards. Also move everything down
+    view = glm::translate(view, glm::vec3(0.0F, -1.0F, -5.0F));
+
+    projection = glm::perspective(glm::radians(45.0F), 600.0F / 400.0F, 0.1F, 100.0F);
+
+    //send matrices to the shader
+    //
+    u32 model_loc = glGetUniformLocation(shader_program.m_id, "model");
+    glUniformMatrix4fv(model_loc, 1, GL_FALSE, glm::value_ptr(model));
+
+    u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
+    glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
+
+    u32 projection_loc = glGetUniformLocation(shader_program.m_id, "projection");
+    glUniformMatrix4fv(projection_loc, 1, GL_FALSE, glm::value_ptr(projection));
+
+    return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
@@ -267,7 +293,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 {
     float time = ((float)SDL_GetTicks()/500.0F);
 
+    //identity matrix
     glm::mat4 transform = glm::mat4(1.0F);
+    //add a translation component to the 'translation' matrix
     transform = glm::translate(transform, glm::vec3(0.0F, glm::sin(time), 0.0F));
     transform = glm::rotate(transform, glm::radians(100 * time),
                             glm::vec3(0.0F, 0.0F, 1.0F));
@@ -278,13 +306,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     glUniformMatrix4fv(transform_location, 1, GL_FALSE, glm::value_ptr(transform));
 
 
-    // glm::vec4 vec(1.0F, 0.0F, 0.0F, 1.0F);
-    // //identity matrix
-    // glm::mat4 translation (1.0F);
-    // //add a translation component to the 'translation' matrix
-    // translation = glm::translate(translation, glm::vec3(1.0F, 1.0F, 0.0F));
-    // //translate vector
-    // vec = translation * vec;
 
 
     const double now = ((double)SDL_GetTicks()) / 1000.0;
