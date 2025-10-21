@@ -1,11 +1,13 @@
 #include "shader.hh"
 #include <GLES2/gl2.h>
 #include <cstdint>
+#include <glm/common.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/vector_float3.hpp>
 #include <glm/trigonometric.hpp>
+#include <glm/gtc/random.hpp>
 #include <vector>
 
 #define SDL_MAIN_USE_CALLBACKS 1
@@ -87,63 +89,63 @@ struct Camera
 
 };
 
-std::vector<u32> get_indices_from_cube()
+static Camera camera;
+
+std::vector<u32> get_indices_from_cube(std::vector<u32>& cube_indices, u32 offset)
 {
-    std::vector<u32> cube_indices;
-
     //lower face
-    cube_indices.push_back(0);
-    cube_indices.push_back(1);
-    cube_indices.push_back(2);
+    cube_indices.push_back(offset + 0);
+    cube_indices.push_back(offset + 1);
+    cube_indices.push_back(offset + 2);
 
-    cube_indices.push_back(1);
-    cube_indices.push_back(2);
-    cube_indices.push_back(3);
+    cube_indices.push_back(offset + 1);
+    cube_indices.push_back(offset + 2);
+    cube_indices.push_back(offset + 3);
 
     //upper face
-    cube_indices.push_back(4);
-    cube_indices.push_back(5);
-    cube_indices.push_back(6);
+    cube_indices.push_back(offset + 4);
+    cube_indices.push_back(offset + 5);
+    cube_indices.push_back(offset + 6);
 
-    cube_indices.push_back(5);
-    cube_indices.push_back(6);
-    cube_indices.push_back(7);
+    cube_indices.push_back(offset + 5);
+    cube_indices.push_back(offset + 6);
+    cube_indices.push_back(offset + 7);
 
     //left side
-    cube_indices.push_back(0);
-    cube_indices.push_back(7);
-    cube_indices.push_back(2);
+    cube_indices.push_back(offset + 0);
+    cube_indices.push_back(offset + 7);
+    cube_indices.push_back(offset + 2);
 
-    cube_indices.push_back(2);
-    cube_indices.push_back(7);
-    cube_indices.push_back(5);
+    cube_indices.push_back(offset + 2);
+    cube_indices.push_back(offset + 7);
+    cube_indices.push_back(offset + 5);
 
     //right side
-    cube_indices.push_back(4);
-    cube_indices.push_back(3);
-    cube_indices.push_back(1);
+    cube_indices.push_back(offset + 4);
+    cube_indices.push_back(offset + 3);
+    cube_indices.push_back(offset + 1);
 
-    cube_indices.push_back(4);
-    cube_indices.push_back(6);
-    cube_indices.push_back(1);
+    cube_indices.push_back(offset + 4);
+    cube_indices.push_back(offset + 6);
+    cube_indices.push_back(offset + 1);
 
     //front face
-    cube_indices.push_back(2);
-    cube_indices.push_back(3);
-    cube_indices.push_back(5);
+    cube_indices.push_back(offset + 2);
+    cube_indices.push_back(offset + 3);
+    cube_indices.push_back(offset + 5);
 
-    cube_indices.push_back(5);
-    cube_indices.push_back(3);
-    cube_indices.push_back(4);
+    cube_indices.push_back(offset + 5);
+    cube_indices.push_back(offset + 3);
+    cube_indices.push_back(offset + 4);
 
     //back face
-    cube_indices.push_back(0);
-    cube_indices.push_back(1);
-    cube_indices.push_back(7);
+    cube_indices.push_back(offset + 0);
+    cube_indices.push_back(offset + 1);
+    cube_indices.push_back(offset + 7);
 
-    cube_indices.push_back(7);
-    cube_indices.push_back(1);
-    cube_indices.push_back(6);
+    cube_indices.push_back(offset + 7);
+    cube_indices.push_back(offset + 1);
+    cube_indices.push_back(offset + 6);
 
     return cube_indices;
 }
@@ -160,9 +162,10 @@ inline void push_floats(std::vector<float>& v, const glm::vec2& x)
     v.push_back(x.y);
 }
 
-std::vector<float> gen_cube(glm::vec3 center, float side)
+void gen_cube(std::vector<float>& vertices,
+              std::vector<u32>& indices,
+              glm::vec3 center, float side)
 {
-    std::vector<float> vertices;
     const float half = side/2.0F;
 
     glm::vec3 min = center - half;
@@ -196,8 +199,6 @@ std::vector<float> gen_cube(glm::vec3 center, float side)
     push_floats(vertices, max - glm::vec3(side, 0.0F, side));
     push_floats(vertices, glm::vec2(1.0F, 1.0F));
 
-
-    return vertices;
 }
 
 
@@ -254,7 +255,17 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     glEnable(GL_DEPTH_TEST);
 
-    std::vector<float> cube_vertices = gen_cube(glm::vec3(0, 0, 0.0), 1.0);
+    srand(time(nullptr));
+
+    std::vector<float> cube_vertices;
+    u32 n_cubes = 3;
+    glm::vec3 centers[3] = {{0,0,0}, glm::sphericalRand(3.0F), glm::sphericalRand(3.0F)};
+    for (u32 i = 0; i < n_cubes; ++i)
+    {
+        float side = glm::linearRand(0.0F,2.0F);
+        gen_cube(cube_vertices, cube_indices, centers[i], side);
+        get_indices_from_cube(cube_indices, i*8);
+    }
 
     //create VBO buffer
     u32 VBO;
@@ -292,7 +303,6 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     //NOTE that by binding the EBO while a certain VAO is bound the EBO gets automatically
     //linked to that EBO. This means that binding the VAO will automatically bind the EBO.
 
-    cube_indices = get_indices_from_cube();
     //buffer the data
     // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, cube_indices.size() * sizeof(u32), cube_indices.data(), GL_STATIC_DRAW);
@@ -387,25 +397,14 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     // model = glm::rotate(model, glm::radians(-45.0F),
     //                     glm::normalize(glm::vec3(1.0F, 1.0F, 0.0F)));
 
-    //view matrix: move everything in front so that it is the same as moving
-    //the camera backwards. Also move everything down
-    view = glm::translate(view, glm::vec3(0.0F, -1.0F, -5.0F));
-
     projection = glm::perspective(glm::radians(45.0F), 600.0F / 400.0F, 0.1F, 100.0F);
-
-    //send matrices to the shader
-    //
-    // u32 model_loc = glGetUniformLocation(shader_program.m_id, "model");
-    // glUniformMatrix4fv(model_loc, 1, GL_FALSE, glm::value_ptr(model));
-
-    u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
-    glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
 
     u32 projection_loc = glGetUniformLocation(shader_program.m_id, "projection");
     glUniformMatrix4fv(projection_loc, 1, GL_FALSE, glm::value_ptr(projection));
 
 
-    Camera camera {.position = glm::vec3(0.0, 0.0, 3.0F), .target = origin};
+    //setup camera
+    camera = Camera {.position = glm::vec3(0.0, 0.0, -7.0F), .target = origin};
     camera.look_direction = camera.target - camera.position;
 
     glm::vec3 up (0,1,0);
@@ -441,6 +440,24 @@ SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
 
 }
 
+void move_camera()
+{
+    //update view matrix
+    float radius = 10.0F;
+
+    view = glm::mat4(1.0F);
+
+    float time = (SDL_GetTicks() / 500.0F);
+    float cam_x = glm::sin(time) * radius;
+    float cam_z = glm::cos(time) * radius;
+
+    view = glm::lookAt(glm::vec3(cam_x, 0.0F, cam_z), camera.target, camera.up);
+
+    //buffer it
+    u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
+    glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
+}
+
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
 
@@ -453,48 +470,26 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     // transform = glm::scale(transform, glm::vec3(0.5F, 0.5F, 0.5F));
     model = glm::translate(model, glm::vec3(0.0F, 1, 0.0F));
     //rotate 
-    model = glm::rotate(model, glm::radians(50 * time),
-                            glm::normalize(glm::vec3(0.5F, 1.0F, 0.0F)));
-
+    // model = glm::rotate(model, glm::radians(50 * time),
+    //                         glm::normalize(glm::vec3(0.5F, 1.0F, 0.0F)));
 
     u32 model_loc = glGetUniformLocation(shader_program.m_id, "model");
     glUniformMatrix4fv(model_loc, 1, GL_FALSE, glm::value_ptr(model));
 
-    //set the transform uniform
-    // u32 transform_location = glGetUniformLocation(shader_program.m_id, "transform");
-    // glUniformMatrix4fv(transform_location, 1, GL_FALSE, glm::value_ptr(transform));
-
+    move_camera();
 
     const double now = ((double)SDL_GetTicks()) / 1000.0;
-
     const float red = 0.5 + 0.5 * SDL_sin(now);
-
     glClearColor(red, 0.0,0.0,1.0);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
-    //draw using vertices from the bound VBO
-    // glDrawArrays(GL_TRIANGLES, 0, 3);
-
     //draw using the indices contained in the active EBO
     glDrawElements(GL_TRIANGLES, cube_indices.size(), GL_UNSIGNED_INT, 0);
 
-    // SDL_SetRenderDrawColorFloat(renderer, red, 0.0F, 0.0F, SDL_ALPHA_OPAQUE_FLOAT);
-    // SDL_RenderClear(renderer);
-    //
-    // SDL_FRect rect;
-    // SDL_SetRenderDrawColor(renderer, 0,0,255, SDL_ALPHA_OPAQUE);
-    // rect.x = rect.y = 100;
-    // rect.w = 100;
-    // rect.h = 50;
-    // SDL_RenderFillRect(renderer, &rect);
-    //
 
     SDL_RenderPresent(renderer);
 
-    //reset VAO
-    // glBindVertexArray(0);
 
     return SDL_APP_CONTINUE;
 }
