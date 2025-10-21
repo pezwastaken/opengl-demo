@@ -58,16 +58,147 @@ static constexpr float border_color[] = {
 // };
 
 //indices for rectangle
-static constexpr u32 indices[] = {
-    0, 1, 2,
-    2, 3, 0
-};
+// static constexpr u32 indices[] = {
+//     0, 1, 2,
+//     2, 3, 0
+// };
+
+static std::vector<u32> cube_indices;
 
 static Shader shader_program;
 
 static glm::mat4 model(1.0F);
 static glm::mat4 view(1.0F);
 static glm::mat4 projection;
+
+
+static constexpr glm::vec3 origin (0.0, 0.0, 0.0);
+
+struct Camera
+{
+    glm::vec3 position;
+    glm::vec3 look_direction;
+    glm::vec3 target;
+
+    glm::vec3 right;
+    glm::vec3 up;
+
+    glm::mat4 lookat;
+
+};
+
+std::vector<u32> get_indices_from_cube()
+{
+    std::vector<u32> cube_indices;
+
+    //lower face
+    cube_indices.push_back(0);
+    cube_indices.push_back(1);
+    cube_indices.push_back(2);
+
+    cube_indices.push_back(1);
+    cube_indices.push_back(2);
+    cube_indices.push_back(3);
+
+    //upper face
+    cube_indices.push_back(4);
+    cube_indices.push_back(5);
+    cube_indices.push_back(6);
+
+    cube_indices.push_back(5);
+    cube_indices.push_back(6);
+    cube_indices.push_back(7);
+
+    //left side
+    cube_indices.push_back(0);
+    cube_indices.push_back(7);
+    cube_indices.push_back(2);
+
+    cube_indices.push_back(2);
+    cube_indices.push_back(7);
+    cube_indices.push_back(5);
+
+    //right side
+    cube_indices.push_back(4);
+    cube_indices.push_back(3);
+    cube_indices.push_back(1);
+
+    cube_indices.push_back(4);
+    cube_indices.push_back(6);
+    cube_indices.push_back(1);
+
+    //front face
+    cube_indices.push_back(2);
+    cube_indices.push_back(3);
+    cube_indices.push_back(5);
+
+    cube_indices.push_back(5);
+    cube_indices.push_back(3);
+    cube_indices.push_back(4);
+
+    //back face
+    cube_indices.push_back(0);
+    cube_indices.push_back(1);
+    cube_indices.push_back(7);
+
+    cube_indices.push_back(7);
+    cube_indices.push_back(1);
+    cube_indices.push_back(6);
+
+    return cube_indices;
+}
+
+inline void push_floats(std::vector<float>& v, const glm::vec3& x)
+{
+    v.push_back(x.x);
+    v.push_back(x.y);
+    v.push_back(x.z);
+}
+inline void push_floats(std::vector<float>& v, const glm::vec2& x)
+{
+    v.push_back(x.x);
+    v.push_back(x.y);
+}
+
+std::vector<float> gen_cube(glm::vec3 center, float side)
+{
+    std::vector<float> vertices;
+    const float half = side/2.0F;
+
+    glm::vec3 min = center - half;
+
+    push_floats(vertices, min);
+    push_floats(vertices, glm::vec2(0.0F, 0.0F));
+
+    //lower face
+    push_floats(vertices, min + glm::vec3(side, 0.0F, 0.0F));
+    push_floats(vertices, glm::vec2(1.0F, 0.0F));
+
+    push_floats(vertices, min + glm::vec3(0.0F, 0.0F, side));
+    push_floats(vertices, glm::vec2(0.0F, 1.0F));
+
+    push_floats(vertices, min + glm::vec3(side, 0.0F, side));
+    push_floats(vertices, glm::vec2(1.0F, 1.0F));
+
+
+    //upper face
+    glm::vec3 max = center + half;
+
+    push_floats(vertices, max);
+    push_floats(vertices, glm::vec2(0.0F, 0.0F));
+
+    push_floats(vertices, max - glm::vec3(side, 0.0F, 0.0F));
+    push_floats(vertices, glm::vec2(1.0F, 0.0F));
+
+    push_floats(vertices, max - glm::vec3(0.0F, 0.0F, side));
+    push_floats(vertices, glm::vec2(0.0F, 1.0F));
+
+    push_floats(vertices, max - glm::vec3(side, 0.0F, side));
+    push_floats(vertices, glm::vec2(1.0F, 1.0F));
+
+
+    return vertices;
+}
 
 
 u32 create_shader_program_obj(std::vector<uint32_t> shaders)
@@ -121,7 +252,9 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     }
     glViewport(0, 0, 600, 400);
 
+    glEnable(GL_DEPTH_TEST);
 
+    std::vector<float> cube_vertices = gen_cube(glm::vec3(0, 0, 0.0), 1.0);
 
     //create VBO buffer
     u32 VBO;
@@ -133,7 +266,11 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    // glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, cube_vertices.size() * sizeof(float), cube_vertices.data(), GL_STATIC_DRAW);
+
+    std::cout << "size of cube_vertices: " << cube_vertices.size() << std::endl;
+    std::cout << "size of vertices: " << sizeof(vertices) << std::endl;
 
     //vertices
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
@@ -155,8 +292,10 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     //NOTE that by binding the EBO while a certain VAO is bound the EBO gets automatically
     //linked to that EBO. This means that binding the VAO will automatically bind the EBO.
 
+    cube_indices = get_indices_from_cube();
     //buffer the data
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+    // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, cube_indices.size() * sizeof(u32), cube_indices.data(), GL_STATIC_DRAW);
 
 
 
@@ -243,10 +382,10 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     //bind the correct VAO (suppose multiple objects)
     glBindVertexArray(VAO);
 
-
     //model matrix
     //tilt the objects by -90 degrees along the x axis
-    model = glm::rotate(model, glm::radians(-90.0F), glm::vec3(1.0F, 0.0F, 0.0F));
+    // model = glm::rotate(model, glm::radians(-45.0F),
+    //                     glm::normalize(glm::vec3(1.0F, 1.0F, 0.0F)));
 
     //view matrix: move everything in front so that it is the same as moving
     //the camera backwards. Also move everything down
@@ -256,14 +395,27 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     //send matrices to the shader
     //
-    u32 model_loc = glGetUniformLocation(shader_program.m_id, "model");
-    glUniformMatrix4fv(model_loc, 1, GL_FALSE, glm::value_ptr(model));
+    // u32 model_loc = glGetUniformLocation(shader_program.m_id, "model");
+    // glUniformMatrix4fv(model_loc, 1, GL_FALSE, glm::value_ptr(model));
 
     u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
     glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
 
     u32 projection_loc = glGetUniformLocation(shader_program.m_id, "projection");
     glUniformMatrix4fv(projection_loc, 1, GL_FALSE, glm::value_ptr(projection));
+
+
+    Camera camera {.position = glm::vec3(0.0, 0.0, 3.0F), .target = origin};
+    camera.look_direction = camera.target - camera.position;
+
+    glm::vec3 up (0,1,0);
+    camera.right = glm::normalize(glm::cross(up, camera.look_direction));
+
+    camera.up = glm::normalize(glm::cross(camera.look_direction, camera.right));
+
+    //lookAt computes the lookat matrix which translates any vector to the "camera" space.
+    camera.lookat = glm::lookAt(camera.position, camera.target, camera.up);
+
 
     return SDL_APP_CONTINUE;
 }
@@ -291,21 +443,26 @@ SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
 
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
+
     float time = ((float)SDL_GetTicks()/500.0F);
 
     //identity matrix
-    glm::mat4 transform = glm::mat4(1.0F);
+    model = glm::mat4(1.0F);
+
     //add a translation component to the 'translation' matrix
-    transform = glm::translate(transform, glm::vec3(0.0F, glm::sin(time), 0.0F));
-    transform = glm::rotate(transform, glm::radians(100 * time),
-                            glm::vec3(0.0F, 0.0F, 1.0F));
-    transform = glm::scale(transform, glm::vec3(0.5F, 0.5F, 0.5F));
+    // transform = glm::scale(transform, glm::vec3(0.5F, 0.5F, 0.5F));
+    model = glm::translate(model, glm::vec3(0.0F, 1, 0.0F));
+    //rotate 
+    model = glm::rotate(model, glm::radians(50 * time),
+                            glm::normalize(glm::vec3(0.5F, 1.0F, 0.0F)));
+
+
+    u32 model_loc = glGetUniformLocation(shader_program.m_id, "model");
+    glUniformMatrix4fv(model_loc, 1, GL_FALSE, glm::value_ptr(model));
 
     //set the transform uniform
-    u32 transform_location = glGetUniformLocation(shader_program.m_id, "transform");
-    glUniformMatrix4fv(transform_location, 1, GL_FALSE, glm::value_ptr(transform));
-
-
+    // u32 transform_location = glGetUniformLocation(shader_program.m_id, "transform");
+    // glUniformMatrix4fv(transform_location, 1, GL_FALSE, glm::value_ptr(transform));
 
 
     const double now = ((double)SDL_GetTicks()) / 1000.0;
@@ -313,13 +470,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     const float red = 0.5 + 0.5 * SDL_sin(now);
 
     glClearColor(red, 0.0,0.0,1.0);
-    glClear(GL_COLOR_BUFFER_BIT);
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 
     //draw using vertices from the bound VBO
     // glDrawArrays(GL_TRIANGLES, 0, 3);
 
     //draw using the indices contained in the active EBO
-    glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(u32), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, cube_indices.size(), GL_UNSIGNED_INT, 0);
 
     // SDL_SetRenderDrawColorFloat(renderer, red, 0.0F, 0.0F, SDL_ALPHA_OPAQUE_FLOAT);
     // SDL_RenderClear(renderer);
