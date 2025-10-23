@@ -1,3 +1,5 @@
+#include "SDL3/SDL_mouse.h"
+#include "key_handler.hh"
 #include "shader.hh"
 #include <GLES2/gl2.h>
 #include <cstdint>
@@ -5,7 +7,10 @@
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/quaternion_float.hpp>
+#include <glm/ext/quaternion_trigonometric.hpp>
 #include <glm/ext/vector_float3.hpp>
+#include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
 #include <glm/gtc/random.hpp>
 #include <vector>
@@ -73,8 +78,10 @@ static glm::mat4 model(1.0F);
 static glm::mat4 view(1.0F);
 static glm::mat4 projection;
 
-
 static constexpr glm::vec3 origin (0.0, 0.0, 0.0);
+static constexpr glm::vec3 world_up (0,1,0);
+static constexpr glm::vec3 world_front (0,0,-1);
+static constexpr glm::vec3 world_right (1,0,0);
 
 struct Camera
 {
@@ -84,12 +91,22 @@ struct Camera
 
     glm::vec3 right;
     glm::vec3 up;
+    glm::vec3 front;
 
     glm::mat4 lookat;
+
+    float last_speed;
 
 };
 
 static Camera camera;
+static constexpr float camera_speed = 2.0F;
+static constexpr float mouse_sens_multiplier = 0.1F;
+
+static KeyHandler key_handler {0};
+
+static u64 current_frame_time = 0;
+static u64 previous_frame_time = 0;
 
 std::vector<u32> get_indices_from_cube(std::vector<u32>& cube_indices, u32 offset)
 {
@@ -245,6 +262,8 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     SDL_SetRenderLogicalPresentation(renderer, 600, 400, SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
     std::clog << "window/renderer created" <<  std::endl;
+
+    SDL_SetWindowRelativeMouseMode(window, true);
 
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
     {
@@ -404,19 +423,47 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
 
     //setup camera
-    camera = Camera {.position = glm::vec3(0.0, 0.0, -7.0F), .target = origin};
-    camera.look_direction = camera.target - camera.position;
+    camera = Camera {.position = glm::vec3(0.0F, 1.0F, 0.0F), .target = origin};
+    camera.right = glm::vec3(1,0,0);
+    camera.up = glm::vec3(0,1,0);
+    camera.front = glm::vec3(0,0,-1);
 
-    glm::vec3 up (0,1,0);
-    camera.right = glm::normalize(glm::cross(up, camera.look_direction));
+    current_frame_time = SDL_GetTicksNS();
+    previous_frame_time = current_frame_time;
 
-    camera.up = glm::normalize(glm::cross(camera.look_direction, camera.right));
-
-    //lookAt computes the lookat matrix which translates any vector to the "camera" space.
-    camera.lookat = glm::lookAt(camera.position, camera.target, camera.up);
-
+    // camera.look_direction = camera.target - camera.position;
+    // camera.look_direction = front;
+    //
+    // camera.right = glm::normalize(glm::cross(up, camera.look_direction));
+    //
+    // camera.up = glm::normalize(glm::cross(camera.look_direction, camera.right));
+    //
+    // //lookAt computes the lookat matrix which translates any vector to the "camera" space.
+    // camera.lookat = glm::lookAt(camera.position, camera.position + front, camera.up);
+    //
+    // std::clog << "initial camera position: " << camera.position.x << ", "
+    //     << camera.position.y << ", " << camera.position.z << "\n";
+    //
+    // std::clog << "camera right: " << camera.right.x << ", "
+    //     << camera.right.y << ", " << camera.right.z << "\n";
+    //
+    // std::clog << "camera up: " << camera.up.x << ", "
+    //     << camera.up.y << ", " << camera.up.z << "\n";
 
     return SDL_APP_CONTINUE;
+}
+
+void camera_rotate(float delta_x, float delta_y)
+{
+    glm::quat delta_yaw = glm::angleAxis(glm::radians(delta_x), world_up);
+    glm::quat delta_pitch = glm::angleAxis(glm::radians(delta_y), camera.right);
+
+    glm::quat delta_rotation = delta_yaw * delta_pitch;
+    delta_rotation = glm::normalize(delta_rotation);
+
+    camera.right = delta_rotation * camera.right;
+    camera.up = delta_rotation * camera.up;
+    camera.front = delta_rotation * camera.front;
 }
 
 SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
@@ -436,32 +483,87 @@ SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
         std::clog << "gl viewport resized to: " << w << " , " << h << std::endl;
     }
 
+    if (event->type == SDL_EVENT_KEY_DOWN)
+    {
+        set_key_pressed(key_handler, event->key.scancode);
+    }
+    if (event->type == SDL_EVENT_KEY_UP)
+    {
+        set_key_released(key_handler, event->key.scancode);
+    }
+
+    if (event->type == SDL_EVENT_MOUSE_MOTION)
+    {
+        auto delta_x = -event->motion.xrel * mouse_sens_multiplier;
+        auto delta_y = -event->motion.yrel * mouse_sens_multiplier;
+
+        // std::clog << "mouse relative movement x: " << event->motion.xrel << "\n";
+        // std::clog << "mouse relative movement y: " << event->motion.yrel << std::endl;
+
+        camera_rotate(delta_x, delta_y);
+    }
+
     return SDL_APP_CONTINUE;
 
 }
 
-void move_camera()
+void move_camera(u64 delta_time)
 {
+    float speed = camera_speed * (delta_time/10e8);
+    if (get_key_state(key_handler, SDL_SCANCODE_W))
+    {
+        camera.position += speed * camera.front;
+    }
+    if (get_key_state(key_handler, SDL_SCANCODE_S))
+    {
+        camera.position -= speed * camera.front;
+    }
+    if (get_key_state(key_handler, SDL_SCANCODE_D))
+    {
+        camera.position += speed * camera.right;
+    }
+    if (get_key_state(key_handler, SDL_SCANCODE_A))
+    {
+        camera.position -= speed * camera.right;
+    }
+
+    camera.last_speed = speed;
+}
+
+void update_camera(u64 delta_time)
+{
+
+    move_camera(delta_time);
+
     //update view matrix
     float radius = 10.0F;
 
     view = glm::mat4(1.0F);
 
-    float time = (SDL_GetTicks() / 500.0F);
-    float cam_x = glm::sin(time) * radius;
-    float cam_z = glm::cos(time) * radius;
+    // float time = (SDL_GetTicks() / 500.0F);
+    // float cam_x = glm::sin(time) * radius;
+    // float cam_z = glm::cos(time) * radius;
+    // view = glm::lookAt(glm::vec3(cam_x, 0.0F, cam_z), camera.target, camera.up);
 
-    view = glm::lookAt(glm::vec3(cam_x, 0.0F, cam_z), camera.target, camera.up);
+    view = glm::lookAt(camera.position, camera.position + camera.front, camera.up);
 
     //buffer it
     u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
     glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
 }
 
+
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
 
-    float time = ((float)SDL_GetTicks()/500.0F);
+    // float time = ((float)SDL_GetTicks()/500.0F);
+
+    current_frame_time = SDL_GetTicksNS();
+
+    u64 delta_time = current_frame_time - previous_frame_time;
+    previous_frame_time = current_frame_time;
+
+    // std::clog << "delta time was: " << delta_time << std::endl;
 
     //identity matrix
     model = glm::mat4(1.0F);
@@ -476,7 +578,19 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     u32 model_loc = glGetUniformLocation(shader_program.m_id, "model");
     glUniformMatrix4fv(model_loc, 1, GL_FALSE, glm::value_ptr(model));
 
-    move_camera();
+
+    update_camera(delta_time);
+
+    static u64 delta_time_acc = 0;
+    delta_time_acc += delta_time;
+    if (delta_time_acc >= 10e8)
+    {
+        // std::clog << "delta time was: " << delta_time << std::endl;
+        // std::clog << "coglione camera position: " << camera.position.x << ", " << camera.position.y << ", " << camera.position.z << std::endl;
+        // std::clog << "camera speed: " << camera.last_speed << std::endl;
+        delta_time_acc = 0;
+    }
+
 
     const double now = ((double)SDL_GetTicks()) / 1000.0;
     const float red = 0.5 + 0.5 * SDL_sin(now);
@@ -489,7 +603,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 
     SDL_RenderPresent(renderer);
-
 
     return SDL_APP_CONTINUE;
 }
