@@ -33,6 +33,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "imgui.h"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_opengl3.h"
 
 #include "utils.hh"
 
@@ -294,6 +297,20 @@ void create_light_source_data()
     context.ebos.push_back(light_ebo);
 }
 
+void imgui_init()
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplSDL3_InitForOpenGL(window, NULL);
+    ImGui_ImplOpenGL3_Init();
+
+}
+
 SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 {
 
@@ -315,7 +332,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     std::clog << "window/renderer created" <<  std::endl;
 
-    SDL_SetWindowRelativeMouseMode(window, true);
+    imgui_init();
 
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
     {
@@ -520,39 +537,76 @@ void camera_rotate(float delta_x, float delta_y)
 
 SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
 {
-    if (event->type == SDL_EVENT_QUIT)
+
+    ImGui_ImplSDL3_ProcessEvent(event);
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (io.WantCaptureMouse)
     {
-        std::clog << "exiting" << std::endl;
-        return SDL_APP_SUCCESS;
+        std::clog << "want to capture mouse" << std::endl;
     }
 
-    if (event->type == SDL_EVENT_WINDOW_RESIZED)
+    switch (event->type)
     {
-        int w = event->window.data1;
-        int h = event->window.data2;
 
-        glViewport(0, 0, w, h);
-        std::clog << "gl viewport resized to: " << w << " , " << h << std::endl;
-    }
+        case SDL_EVENT_QUIT:
+        {
+            std::clog << "exiting" << std::endl;
+            return SDL_APP_SUCCESS;
+        }
 
-    if (event->type == SDL_EVENT_KEY_DOWN)
-    {
-        set_key_pressed(key_handler, event->key.scancode);
-    }
-    if (event->type == SDL_EVENT_KEY_UP)
-    {
-        set_key_released(key_handler, event->key.scancode);
-    }
+        case SDL_EVENT_WINDOW_RESIZED:
+        {
+            int w = event->window.data1;
+            int h = event->window.data2;
 
-    if (event->type == SDL_EVENT_MOUSE_MOTION)
-    {
-        auto delta_x = -event->motion.xrel * mouse_sens_multiplier;
-        auto delta_y = -event->motion.yrel * mouse_sens_multiplier;
+            glViewport(0, 0, w, h);
+            std::clog << "gl viewport resized to: " << w << " , " << h << std::endl;
+            break;
+        }
 
-        // std::clog << "mouse relative movement x: " << event->motion.xrel << "\n";
-        // std::clog << "mouse relative movement y: " << event->motion.yrel << std::endl;
+        case SDL_EVENT_KEY_DOWN:
+        {
+            set_key_pressed(key_handler, event->key.scancode);
+            break;
+        }
+        case SDL_EVENT_KEY_UP:
+        {
+            set_key_released(key_handler, event->key.scancode);
+            break;
+        }
 
-        camera_rotate(delta_x, delta_y);
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        {
+            key_handler.left_click = true;
+            SDL_SetWindowRelativeMouseMode(window, true);
+            break;
+        }
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+        {
+            key_handler.left_click = false;
+            SDL_SetWindowRelativeMouseMode(window, false);
+            break;
+        }
+
+        case SDL_EVENT_MOUSE_MOTION:
+        {
+            //dragging mouse while holding left click rotates camera
+            if (key_handler.left_click)
+            {
+                auto delta_x = -event->motion.xrel * mouse_sens_multiplier;
+                auto delta_y = -event->motion.yrel * mouse_sens_multiplier;
+
+                // std::clog << "mouse relative movement x: " << event->motion.xrel << "\n";
+                // std::clog << "mouse relative movement y: " << event->motion.yrel << std::endl;
+
+                camera_rotate(delta_x, delta_y);
+            }
+            break;
+        }
+
+        default:
+            break;
     }
 
     return SDL_APP_CONTINUE;
@@ -623,6 +677,12 @@ void update_camera(u64 delta_time)
 
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+    ImGui::ShowDemoWindow(); // Show demo window! :)
+
+
     current_frame_time = SDL_GetTicksNS();
     u64 delta_time = current_frame_time - previous_frame_time;
     previous_frame_time = current_frame_time;
@@ -661,7 +721,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                    GL_UNSIGNED_INT, 0);
 
 
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
     SDL_RenderPresent(renderer);
+
 
     glBindVertexArray(0);
 
@@ -671,6 +735,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 void SDL_AppQuit(void *appstate, SDL_AppResult res)
 {
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
 }
 
 
