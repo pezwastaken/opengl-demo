@@ -3,6 +3,9 @@
 #include <GLES2/gl2.h>
 #include <fstream>
 #include <glad/glad.h>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -102,6 +105,19 @@ struct Shader
         glUniform1f(glGetUniformLocation(m_id, name.c_str()), value);
     }
 
+    void set_vec3(const std::string& name, glm::vec3 value)
+    {
+        glUniform3f(glGetUniformLocation(m_id, name.c_str()),
+                    value.x, value.y, value.z);
+    }
+
+    void set_mat4(const std::string& name, const glm::mat4& value)
+    {
+        glUniformMatrix4fv(glGetUniformLocation(m_id, name.c_str()),
+                    1, GL_FALSE, glm::value_ptr(value));
+    }
+
+
 
     //create a new shader program by linking the given shaders
     static u32 create_shader_program_obj(std::vector<u32> shaders)
@@ -115,11 +131,11 @@ struct Shader
 
         int success;
         char info_log[512];
-        glGetShaderiv(shader_program, GL_COMPILE_STATUS, &success);
+        glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
         if (!success)
         {
-            glGetShaderInfoLog(shader_program, 512, NULL, info_log);
-            std::clog << "vertex shader compilation failed: " << info_log << std::endl;
+            glGetProgramInfoLog(shader_program, 512, NULL, info_log);
+            std::clog << "program link failed: " << info_log << std::endl;
             exit(1);
         }
 

@@ -70,9 +70,10 @@ static constexpr float border_color[] = {
 //     2, 3, 0
 // };
 
-static std::vector<u32> cube_indices;
+// static std::vector<u32> cube_indices;
 
 static Shader shader_program;
+static Shader light_source_shader;
 
 static glm::mat4 model(1.0F);
 static glm::mat4 view(1.0F);
@@ -100,7 +101,7 @@ struct Camera
 };
 
 static Camera camera;
-static constexpr float camera_speed = 2.0F;
+static constexpr float camera_speed = 4.0F;
 static constexpr float mouse_sens_multiplier = 0.1F;
 
 static KeyHandler key_handler {0};
@@ -108,63 +109,75 @@ static KeyHandler key_handler {0};
 static u64 current_frame_time = 0;
 static u64 previous_frame_time = 0;
 
-std::vector<u32> get_indices_from_cube(std::vector<u32>& cube_indices, u32 offset)
+
+struct WorldData
+{
+    std::vector<u32> vaos;
+    std::vector<u32> vbos;
+    std::vector<u32> ebos;
+
+    std::vector<std::vector<u32>> objects_draw_indices;
+};
+
+static WorldData context {};
+
+std::vector<u32> get_indices_from_cube(std::vector<u32>& indices, u32 offset)
 {
     //lower face
-    cube_indices.push_back(offset + 0);
-    cube_indices.push_back(offset + 1);
-    cube_indices.push_back(offset + 2);
+    indices.push_back(offset + 0);
+    indices.push_back(offset + 1);
+    indices.push_back(offset + 2);
 
-    cube_indices.push_back(offset + 1);
-    cube_indices.push_back(offset + 2);
-    cube_indices.push_back(offset + 3);
+    indices.push_back(offset + 1);
+    indices.push_back(offset + 2);
+    indices.push_back(offset + 3);
 
     //upper face
-    cube_indices.push_back(offset + 4);
-    cube_indices.push_back(offset + 5);
-    cube_indices.push_back(offset + 6);
+    indices.push_back(offset + 4);
+    indices.push_back(offset + 5);
+    indices.push_back(offset + 6);
 
-    cube_indices.push_back(offset + 5);
-    cube_indices.push_back(offset + 6);
-    cube_indices.push_back(offset + 7);
+    indices.push_back(offset + 5);
+    indices.push_back(offset + 6);
+    indices.push_back(offset + 7);
 
     //left side
-    cube_indices.push_back(offset + 0);
-    cube_indices.push_back(offset + 7);
-    cube_indices.push_back(offset + 2);
+    indices.push_back(offset + 0);
+    indices.push_back(offset + 7);
+    indices.push_back(offset + 2);
 
-    cube_indices.push_back(offset + 2);
-    cube_indices.push_back(offset + 7);
-    cube_indices.push_back(offset + 5);
+    indices.push_back(offset + 2);
+    indices.push_back(offset + 7);
+    indices.push_back(offset + 5);
 
     //right side
-    cube_indices.push_back(offset + 4);
-    cube_indices.push_back(offset + 3);
-    cube_indices.push_back(offset + 1);
+    indices.push_back(offset + 4);
+    indices.push_back(offset + 3);
+    indices.push_back(offset + 1);
 
-    cube_indices.push_back(offset + 4);
-    cube_indices.push_back(offset + 6);
-    cube_indices.push_back(offset + 1);
+    indices.push_back(offset + 4);
+    indices.push_back(offset + 6);
+    indices.push_back(offset + 1);
 
     //front face
-    cube_indices.push_back(offset + 2);
-    cube_indices.push_back(offset + 3);
-    cube_indices.push_back(offset + 5);
+    indices.push_back(offset + 2);
+    indices.push_back(offset + 3);
+    indices.push_back(offset + 5);
 
-    cube_indices.push_back(offset + 5);
-    cube_indices.push_back(offset + 3);
-    cube_indices.push_back(offset + 4);
+    indices.push_back(offset + 5);
+    indices.push_back(offset + 3);
+    indices.push_back(offset + 4);
 
     //back face
-    cube_indices.push_back(offset + 0);
-    cube_indices.push_back(offset + 1);
-    cube_indices.push_back(offset + 7);
+    indices.push_back(offset + 0);
+    indices.push_back(offset + 1);
+    indices.push_back(offset + 7);
 
-    cube_indices.push_back(offset + 7);
-    cube_indices.push_back(offset + 1);
-    cube_indices.push_back(offset + 6);
+    indices.push_back(offset + 7);
+    indices.push_back(offset + 1);
+    indices.push_back(offset + 6);
 
-    return cube_indices;
+    return indices;
 }
 
 inline void push_floats(std::vector<float>& v, const glm::vec3& x)
@@ -180,7 +193,6 @@ inline void push_floats(std::vector<float>& v, const glm::vec2& x)
 }
 
 void gen_cube(std::vector<float>& vertices,
-              std::vector<u32>& indices,
               glm::vec3 center, float side)
 {
     const float half = side/2.0F;
@@ -241,6 +253,46 @@ u32 create_shader_program_obj(std::vector<uint32_t> shaders)
     return shader_program;
 }
 
+void create_light_source_data()
+{
+    std::vector<float> light_cube_vertices;
+    std::vector<u32>& light_cube_indices = context.objects_draw_indices[1];
+    glm::vec3 center = {1,0,-2};
+    float side = 1.0F;
+    gen_cube(light_cube_vertices, center, side);
+    context.objects_draw_indices.push_back({});
+    get_indices_from_cube(light_cube_indices, 0);
+
+    u32 light_vbo;
+    glGenBuffers(1, &light_vbo);
+
+    u32 light_vao;
+    glGenVertexArrays(1, &light_vao);
+
+    u32 light_ebo;
+    glGenBuffers(1, &light_ebo);
+
+    glBindVertexArray(light_vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, light_vbo);
+    glBufferData(GL_ARRAY_BUFFER, light_cube_vertices.size() * sizeof(float),
+                 light_cube_vertices.data(), GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, light_ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, light_cube_indices.size() * sizeof(u32),
+                 light_cube_indices.data(), GL_STATIC_DRAW);
+
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glBindVertexArray(0);
+
+    //probably don't need the ebo since we already have one for the previous cubes
+    context.vbos.push_back(light_vbo);
+    context.vaos.push_back(light_vao);
+    context.ebos.push_back(light_ebo);
+}
 
 SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 {
@@ -282,9 +334,11 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     for (u32 i = 0; i < n_cubes; ++i)
     {
         float side = glm::linearRand(0.0F,2.0F);
-        gen_cube(cube_vertices, cube_indices, centers[i], side);
-        get_indices_from_cube(cube_indices, i*8);
+        gen_cube(cube_vertices, centers[i], side);
+        context.objects_draw_indices.push_back({});
+        get_indices_from_cube(context.objects_draw_indices[0], i*8);
     }
+
 
     //create VBO buffer
     u32 VBO;
@@ -324,8 +378,14 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     //buffer the data
     // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, cube_indices.size() * sizeof(u32), cube_indices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 context.objects_draw_indices[0].size() * sizeof(u32),
+                 context.objects_draw_indices[0].data(), GL_STATIC_DRAW);
 
+
+    context.vbos.push_back(VBO);
+    context.vaos.push_back(VAO);
+    context.ebos.push_back(EBO);
 
 
     //flip the images vertically on load
@@ -431,24 +491,16 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     current_frame_time = SDL_GetTicksNS();
     previous_frame_time = current_frame_time;
 
-    // camera.look_direction = camera.target - camera.position;
-    // camera.look_direction = front;
-    //
-    // camera.right = glm::normalize(glm::cross(up, camera.look_direction));
-    //
-    // camera.up = glm::normalize(glm::cross(camera.look_direction, camera.right));
-    //
-    // //lookAt computes the lookat matrix which translates any vector to the "camera" space.
-    // camera.lookat = glm::lookAt(camera.position, camera.position + front, camera.up);
-    //
-    // std::clog << "initial camera position: " << camera.position.x << ", "
-    //     << camera.position.y << ", " << camera.position.z << "\n";
-    //
-    // std::clog << "camera right: " << camera.right.x << ", "
-    //     << camera.right.y << ", " << camera.right.z << "\n";
-    //
-    // std::clog << "camera up: " << camera.up.x << ", "
-    //     << camera.up.y << ", " << camera.up.z << "\n";
+    //set up lights
+    create_light_source_data();
+    light_source_shader = Shader("shaders/light_source_vertex.glsl",
+                                 "shaders/light_source_fragment.glsl");
+    light_source_shader.use();
+    light_source_shader.set_vec3("lightColor", glm::vec3(1,1,1));
+    light_source_shader.set_vec3("objectColor", glm::vec3(1,0,0));
+    light_source_shader.set_mat4("projection", projection);
+
+    shader_program.use();
 
     return SDL_APP_CONTINUE;
 }
@@ -547,40 +599,17 @@ void update_camera(u64 delta_time)
 
     view = glm::lookAt(camera.position, camera.position + camera.front, camera.up);
 
+    shader_program.use();
     //buffer it
-    u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
-    glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
-}
+    // u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
+    // glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
+    shader_program.set_mat4("view", view);
 
 
-SDL_AppResult SDL_AppIterate(void *appstate)
-{
+    light_source_shader.use();
+    light_source_shader.set_mat4("view", view);
 
-    // float time = ((float)SDL_GetTicks()/500.0F);
-
-    current_frame_time = SDL_GetTicksNS();
-
-    u64 delta_time = current_frame_time - previous_frame_time;
-    previous_frame_time = current_frame_time;
-
-    // std::clog << "delta time was: " << delta_time << std::endl;
-
-    //identity matrix
-    model = glm::mat4(1.0F);
-
-    //add a translation component to the 'translation' matrix
-    // transform = glm::scale(transform, glm::vec3(0.5F, 0.5F, 0.5F));
-    model = glm::translate(model, glm::vec3(0.0F, 1, 0.0F));
-    //rotate 
-    // model = glm::rotate(model, glm::radians(50 * time),
-    //                         glm::normalize(glm::vec3(0.5F, 1.0F, 0.0F)));
-
-    u32 model_loc = glGetUniformLocation(shader_program.m_id, "model");
-    glUniformMatrix4fv(model_loc, 1, GL_FALSE, glm::value_ptr(model));
-
-
-    update_camera(delta_time);
-
+    //debug camera position stuff
     static u64 delta_time_acc = 0;
     delta_time_acc += delta_time;
     if (delta_time_acc >= 10e8)
@@ -590,19 +619,52 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         // std::clog << "camera speed: " << camera.last_speed << std::endl;
         delta_time_acc = 0;
     }
+}
+
+SDL_AppResult SDL_AppIterate(void *appstate)
+{
+    current_frame_time = SDL_GetTicksNS();
+    u64 delta_time = current_frame_time - previous_frame_time;
+    previous_frame_time = current_frame_time;
 
 
-    const double now = ((double)SDL_GetTicks()) / 1000.0;
-    const float red = 0.5 + 0.5 * SDL_sin(now);
-    glClearColor(red, 0.0,0.0,1.0);
+    update_camera(delta_time);
+
+    //model matrix (uniform)
+    model = glm::mat4(1.0F);
+    model = glm::translate(model, glm::vec3(0.0F, 1, -2.0F));
+
+
+    shader_program.use();
+    shader_program.set_mat4("model", model);
+
+    glBindVertexArray(context.vaos[0]);
+    // glBindBuffer(GL_ARRAY_BUFFER, context.vbos[0]);
+    // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, context.ebos[0]);
+
+    glClearColor(0.8, 0.8, 1.0, 1.0);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     //draw using the indices contained in the active EBO
-    glDrawElements(GL_TRIANGLES, cube_indices.size(), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, context.objects_draw_indices[0].size(),
+                   GL_UNSIGNED_INT, 0);
+
+
+    //light stuff
+    light_source_shader.use();
+    glBindVertexArray(context.vaos[1]);
+
+    light_source_shader.set_mat4("model", model);
+
+    glDrawElements(GL_TRIANGLES, context.objects_draw_indices[1].size(),
+                   GL_UNSIGNED_INT, 0);
 
 
     SDL_RenderPresent(renderer);
+
+    glBindVertexArray(0);
+
 
     return SDL_APP_CONTINUE;
 }
