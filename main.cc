@@ -63,13 +63,6 @@ static constexpr float border_color[] = {
 };
 
 
-// static std::vector<u32> cube_indices;
-
-// static Shader shader_program;
-// static Shader light_shader;
-// static Shader light_source_shader;
-
-// static glm::mat4 model(1.0F);
 static glm::mat4 view(1.0F);
 static glm::mat4 projection;
 
@@ -128,66 +121,6 @@ struct WorldData
 };
 
 static WorldData context {};
-
-// std::vector<u32> get_indices_from_cube(u32 offset)
-// {
-//     std::vector<u32> indices;
-//     //lower face
-//     indices.push_back(offset + 0);
-//     indices.push_back(offset + 1);
-//     indices.push_back(offset + 2);
-//
-//     indices.push_back(offset + 1);
-//     indices.push_back(offset + 2);
-//     indices.push_back(offset + 3);
-//
-//     //upper face
-//     indices.push_back(offset + 4);
-//     indices.push_back(offset + 5);
-//     indices.push_back(offset + 6);
-//
-//     indices.push_back(offset + 5);
-//     indices.push_back(offset + 6);
-//     indices.push_back(offset + 7);
-//
-//     //left side
-//     indices.push_back(offset + 0);
-//     indices.push_back(offset + 7);
-//     indices.push_back(offset + 2);
-//
-//     indices.push_back(offset + 2);
-//     indices.push_back(offset + 7);
-//     indices.push_back(offset + 5);
-//
-//     //right side
-//     indices.push_back(offset + 4);
-//     indices.push_back(offset + 3);
-//     indices.push_back(offset + 1);
-//
-//     indices.push_back(offset + 4);
-//     indices.push_back(offset + 6);
-//     indices.push_back(offset + 1);
-//
-//     //front face
-//     indices.push_back(offset + 2);
-//     indices.push_back(offset + 3);
-//     indices.push_back(offset + 5);
-//
-//     indices.push_back(offset + 5);
-//     indices.push_back(offset + 3);
-//     indices.push_back(offset + 4);
-//
-//     //back face
-//     indices.push_back(offset + 0);
-//     indices.push_back(offset + 1);
-//     indices.push_back(offset + 7);
-//
-//     indices.push_back(offset + 7);
-//     indices.push_back(offset + 1);
-//     indices.push_back(offset + 6);
-//
-//     return indices;
-// }
 
 inline void push_floats(std::vector<float>& v, const glm::vec3& x)
 {
@@ -600,13 +533,8 @@ void update_camera(u64 delta_time)
     for (auto& shader : context.shaders)
     {
         shader.use();
-        //buffer it
-        // u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
-        // glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
         shader.set_mat4("view", view);
 
-        // light_source_shader.use();
-        // light_source_shader.set_mat4("view", view);
     }
 
     //debug camera position stuff
@@ -614,8 +542,7 @@ void update_camera(u64 delta_time)
     delta_time_acc += delta_time;
     if (delta_time_acc >= 10e8)
     {
-        // std::clog << "delta time was: " << delta_time << std::endl;
-        // std::clog << "coglione camera position: " << camera.position.x << ", " << camera.position.y << ", " << camera.position.z << std::endl;
+        // std::clog << "camera position: " << camera.position.x << ", " << camera.position.y << ", " << camera.position.z << std::endl;
         // std::clog << "camera speed: " << camera.last_speed << std::endl;
         delta_time_acc = 0;
     }
@@ -641,11 +568,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     update_camera(delta_time);
 
-    // glBindVertexArray(context.vaos[0]);
-
-
     //render objects
-
     for(auto& world_object : context.objects)
     {
         Shader& object_shader = context.shaders[world_object.shader];
@@ -657,15 +580,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     }
 
     glBindVertexArray(0);
-
-    //light source stuff
-    // light_source_shader.use();
-    // glBindVertexArray(context.vaos[1]);
-    //
-    // light_source_shader.set_mat4("model", model);
-    //
-    // glDrawElements(GL_TRIANGLES, context.objects_draw_indices[1].size(),
-    //                GL_UNSIGNED_INT, 0);
 
 
     // ImGui::Render();
