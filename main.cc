@@ -51,34 +51,25 @@ static SDL_Renderer* renderer = nullptr;
 // };
 
 //rectangle with colors and texture coordinates (starting from bottom left, clockwise)
-static constexpr float vertices[] = {
-    0.5F, -0.5F, 0.0F,     1.0F, 0.0F,
-    -0.5F, -0.5F, 0.0F,    0.0F, 0.0F,
-    -0.5F, +0.5F, 0.0F,    0.0F, 1.0F,
-    0.5F, 0.5F, 0.0F,      1.0F, 1.0F
-};
+// static constexpr float vertices[] = {
+//     0.5F, -0.5F, 0.0F,     1.0F, 0.0F,
+//     -0.5F, -0.5F, 0.0F,    0.0F, 0.0F,
+//     -0.5F, +0.5F, 0.0F,    0.0F, 1.0F,
+//     0.5F, 0.5F, 0.0F,      1.0F, 1.0F
+// };
 
 static constexpr float border_color[] = {
     1.0F, 1.0F, 1.0F
 };
 
-//triangle
-// static constexpr u32 indices[] = {
-//     0, 1, 2,
-// };
-
-//indices for rectangle
-// static constexpr u32 indices[] = {
-//     0, 1, 2,
-//     2, 3, 0
-// };
 
 // static std::vector<u32> cube_indices;
 
-static Shader shader_program;
-static Shader light_source_shader;
+// static Shader shader_program;
+// static Shader light_shader;
+// static Shader light_source_shader;
 
-static glm::mat4 model(1.0F);
+// static glm::mat4 model(1.0F);
 static glm::mat4 view(1.0F);
 static glm::mat4 projection;
 
@@ -107,11 +98,19 @@ static Camera camera;
 static constexpr float camera_speed = 4.0F;
 static constexpr float mouse_sens_multiplier = 0.1F;
 
+static bool in_relative_mode = false;
+
 static KeyHandler key_handler {0};
 
 static u64 current_frame_time = 0;
 static u64 previous_frame_time = 0;
 
+struct WorldObject
+{
+    u32 vao;
+    u32 shader;
+    glm::mat4 model;
+};
 
 struct WorldData
 {
@@ -119,69 +118,76 @@ struct WorldData
     std::vector<u32> vbos;
     std::vector<u32> ebos;
 
-    std::vector<std::vector<u32>> objects_draw_indices;
+    // std::vector<std::vector<u32>> objects_draw_indices;
+
+    // std::vector<glm::mat4> models;
+
+    std::vector<Shader> shaders;
+
+    std::vector<WorldObject> objects;
 };
 
 static WorldData context {};
 
-std::vector<u32> get_indices_from_cube(std::vector<u32>& indices, u32 offset)
-{
-    //lower face
-    indices.push_back(offset + 0);
-    indices.push_back(offset + 1);
-    indices.push_back(offset + 2);
-
-    indices.push_back(offset + 1);
-    indices.push_back(offset + 2);
-    indices.push_back(offset + 3);
-
-    //upper face
-    indices.push_back(offset + 4);
-    indices.push_back(offset + 5);
-    indices.push_back(offset + 6);
-
-    indices.push_back(offset + 5);
-    indices.push_back(offset + 6);
-    indices.push_back(offset + 7);
-
-    //left side
-    indices.push_back(offset + 0);
-    indices.push_back(offset + 7);
-    indices.push_back(offset + 2);
-
-    indices.push_back(offset + 2);
-    indices.push_back(offset + 7);
-    indices.push_back(offset + 5);
-
-    //right side
-    indices.push_back(offset + 4);
-    indices.push_back(offset + 3);
-    indices.push_back(offset + 1);
-
-    indices.push_back(offset + 4);
-    indices.push_back(offset + 6);
-    indices.push_back(offset + 1);
-
-    //front face
-    indices.push_back(offset + 2);
-    indices.push_back(offset + 3);
-    indices.push_back(offset + 5);
-
-    indices.push_back(offset + 5);
-    indices.push_back(offset + 3);
-    indices.push_back(offset + 4);
-
-    //back face
-    indices.push_back(offset + 0);
-    indices.push_back(offset + 1);
-    indices.push_back(offset + 7);
-
-    indices.push_back(offset + 7);
-    indices.push_back(offset + 1);
-    indices.push_back(offset + 6);
-
-    return indices;
-}
+// std::vector<u32> get_indices_from_cube(u32 offset)
+// {
+//     std::vector<u32> indices;
+//     //lower face
+//     indices.push_back(offset + 0);
+//     indices.push_back(offset + 1);
+//     indices.push_back(offset + 2);
+//
+//     indices.push_back(offset + 1);
+//     indices.push_back(offset + 2);
+//     indices.push_back(offset + 3);
+//
+//     //upper face
+//     indices.push_back(offset + 4);
+//     indices.push_back(offset + 5);
+//     indices.push_back(offset + 6);
+//
+//     indices.push_back(offset + 5);
+//     indices.push_back(offset + 6);
+//     indices.push_back(offset + 7);
+//
+//     //left side
+//     indices.push_back(offset + 0);
+//     indices.push_back(offset + 7);
+//     indices.push_back(offset + 2);
+//
+//     indices.push_back(offset + 2);
+//     indices.push_back(offset + 7);
+//     indices.push_back(offset + 5);
+//
+//     //right side
+//     indices.push_back(offset + 4);
+//     indices.push_back(offset + 3);
+//     indices.push_back(offset + 1);
+//
+//     indices.push_back(offset + 4);
+//     indices.push_back(offset + 6);
+//     indices.push_back(offset + 1);
+//
+//     //front face
+//     indices.push_back(offset + 2);
+//     indices.push_back(offset + 3);
+//     indices.push_back(offset + 5);
+//
+//     indices.push_back(offset + 5);
+//     indices.push_back(offset + 3);
+//     indices.push_back(offset + 4);
+//
+//     //back face
+//     indices.push_back(offset + 0);
+//     indices.push_back(offset + 1);
+//     indices.push_back(offset + 7);
+//
+//     indices.push_back(offset + 7);
+//     indices.push_back(offset + 1);
+//     indices.push_back(offset + 6);
+//
+//     return indices;
+// }
 
 inline void push_floats(std::vector<float>& v, const glm::vec3& x)
 {
@@ -195,42 +201,19 @@ inline void push_floats(std::vector<float>& v, const glm::vec2& x)
     v.push_back(x.y);
 }
 
-void gen_cube(std::vector<float>& vertices,
-              glm::vec3 center, float side)
-{
-    const float half = side/2.0F;
+WorldObject gen_random_cube(glm::vec3 center, float side, u32 shader_id, u32 vao_id) {
 
-    glm::vec3 min = center - half;
+    (void) side;
+    (void) center;
 
-    push_floats(vertices, min);
-    push_floats(vertices, glm::vec2(0.0F, 0.0F));
+    glm::mat4 random_model(1.0F);
+    auto random_vec = glm::ballRand(5.0F);
+    random_model = glm::translate(random_model, random_vec);
+    float random_scale = glm::linearRand(0.0F,3.0F);
+    random_model = glm::scale(random_model, glm::vec3(random_scale));
 
-    //lower face
-    push_floats(vertices, min + glm::vec3(side, 0.0F, 0.0F));
-    push_floats(vertices, glm::vec2(1.0F, 0.0F));
-
-    push_floats(vertices, min + glm::vec3(0.0F, 0.0F, side));
-    push_floats(vertices, glm::vec2(0.0F, 1.0F));
-
-    push_floats(vertices, min + glm::vec3(side, 0.0F, side));
-    push_floats(vertices, glm::vec2(1.0F, 1.0F));
-
-
-    //upper face
-    glm::vec3 max = center + half;
-
-    push_floats(vertices, max);
-    push_floats(vertices, glm::vec2(0.0F, 0.0F));
-
-    push_floats(vertices, max - glm::vec3(side, 0.0F, 0.0F));
-    push_floats(vertices, glm::vec2(1.0F, 0.0F));
-
-    push_floats(vertices, max - glm::vec3(0.0F, 0.0F, side));
-    push_floats(vertices, glm::vec2(0.0F, 1.0F));
-
-    push_floats(vertices, max - glm::vec3(side, 0.0F, side));
-    push_floats(vertices, glm::vec2(1.0F, 1.0F));
-
+    WorldObject random_cube {.vao = vao_id, .shader = shader_id, .model = random_model};
+    return random_cube;
 }
 
 
@@ -256,15 +239,8 @@ u32 create_shader_program_obj(std::vector<uint32_t> shaders)
     return shader_program;
 }
 
-void create_light_source_data()
+void create_light_source_data(u32 light_source_shader_id)
 {
-    std::vector<float> light_cube_vertices;
-    std::vector<u32>& light_cube_indices = context.objects_draw_indices[1];
-    glm::vec3 center = {1,0,-2};
-    float side = 1.0F;
-    gen_cube(light_cube_vertices, center, side);
-    context.objects_draw_indices.push_back({});
-    get_indices_from_cube(light_cube_indices, 0);
 
     u32 light_vbo;
     glGenBuffers(1, &light_vbo);
@@ -272,18 +248,11 @@ void create_light_source_data()
     u32 light_vao;
     glGenVertexArrays(1, &light_vao);
 
-    u32 light_ebo;
-    glGenBuffers(1, &light_ebo);
-
     glBindVertexArray(light_vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, light_vbo);
-    glBufferData(GL_ARRAY_BUFFER, light_cube_vertices.size() * sizeof(float),
-                 light_cube_vertices.data(), GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, light_ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, light_cube_indices.size() * sizeof(u32),
-                 light_cube_indices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cube_vertices),
+                 cube_vertices, GL_STATIC_DRAW);
 
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
@@ -291,10 +260,12 @@ void create_light_source_data()
 
     glBindVertexArray(0);
 
-    //probably don't need the ebo since we already have one for the previous cubes
     context.vbos.push_back(light_vbo);
     context.vaos.push_back(light_vao);
-    context.ebos.push_back(light_ebo);
+
+    context.objects.push_back(gen_random_cube(origin, 1.0F, light_source_shader_id,
+                                              light_vao)
+                              );
 }
 
 void imgui_init()
@@ -330,9 +301,11 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     SDL_SetRenderLogicalPresentation(renderer, 600, 400, SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
+    SDL_SetWindowRelativeMouseMode(window, true);
+
     std::clog << "window/renderer created" <<  std::endl;
 
-    imgui_init();
+    // imgui_init();
 
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
     {
@@ -345,16 +318,6 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     srand(time(nullptr));
 
-    std::vector<float> cube_vertices;
-    u32 n_cubes = 3;
-    glm::vec3 centers[3] = {{0,0,0}, glm::sphericalRand(3.0F), glm::sphericalRand(3.0F)};
-    for (u32 i = 0; i < n_cubes; ++i)
-    {
-        float side = glm::linearRand(0.0F,2.0F);
-        gen_cube(cube_vertices, centers[i], side);
-        context.objects_draw_indices.push_back({});
-        get_indices_from_cube(context.objects_draw_indices[0], i*8);
-    }
 
 
     //create VBO buffer
@@ -366,12 +329,12 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     glGenVertexArrays(1, &VAO);
 
     glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    // glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-    glBufferData(GL_ARRAY_BUFFER, cube_vertices.size() * sizeof(float), cube_vertices.data(), GL_STATIC_DRAW);
 
-    std::cout << "size of cube_vertices: " << cube_vertices.size() << std::endl;
-    std::cout << "size of vertices: " << sizeof(vertices) << std::endl;
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cube_vertices), cube_vertices,
+                 GL_STATIC_DRAW);
+
+    std::clog << "size of cube_vertices: " << N_CUBE_VERTICES << std::endl;
 
     //vertices
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
@@ -382,27 +345,8 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     glEnableVertexAttribArray(1);
 
 
-    //EBO stuff
-    u32 EBO;
-    glGenBuffers(1, &EBO);
-
-    //binding a GL_ELEMENT_ARRAY_BUFFER means that next time we are goind to draw,
-    //we are gonna be using its indices.
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-
-    //NOTE that by binding the EBO while a certain VAO is bound the EBO gets automatically
-    //linked to that EBO. This means that binding the VAO will automatically bind the EBO.
-
-    //buffer the data
-    // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 context.objects_draw_indices[0].size() * sizeof(u32),
-                 context.objects_draw_indices[0].data(), GL_STATIC_DRAW);
-
-
     context.vbos.push_back(VBO);
     context.vaos.push_back(VAO);
-    context.ebos.push_back(EBO);
 
 
     //flip the images vertically on load
@@ -479,28 +423,14 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     stbi_image_free(data);
 
 
-    shader_program = Shader("shaders/vertex_shader.glsl", "shaders/fragment_shader.glsl");
-    shader_program.use();
-    shader_program.set_int("texture1", 0);
-    shader_program.set_int("texture2", 1);
-
-
     //bind the correct VAO (suppose multiple objects)
     glBindVertexArray(VAO);
 
-    //model matrix
-    //tilt the objects by -90 degrees along the x axis
-    // model = glm::rotate(model, glm::radians(-45.0F),
-    //                     glm::normalize(glm::vec3(1.0F, 1.0F, 0.0F)));
 
     projection = glm::perspective(glm::radians(45.0F), 600.0F / 400.0F, 0.1F, 100.0F);
 
-    u32 projection_loc = glGetUniformLocation(shader_program.m_id, "projection");
-    glUniformMatrix4fv(projection_loc, 1, GL_FALSE, glm::value_ptr(projection));
-
-
     //setup camera
-    camera = Camera {.position = glm::vec3(0.0F, 1.0F, 0.0F), .target = origin};
+    camera = Camera {.position = glm::vec3(0.0F, 1.0F, 5.0F), .target = origin};
     camera.right = glm::vec3(1,0,0);
     camera.up = glm::vec3(0,1,0);
     camera.front = glm::vec3(0,0,-1);
@@ -508,16 +438,37 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     current_frame_time = SDL_GetTicksNS();
     previous_frame_time = current_frame_time;
 
-    //set up lights
-    create_light_source_data();
-    light_source_shader = Shader("shaders/light_source_vertex.glsl",
-                                 "shaders/light_source_fragment.glsl");
+    //shader used to render color + lightning
+    Shader light_shader = Shader("shaders/lightning_vertex.glsl",
+                                 "shaders/lightning_fragment.glsl");
+    light_shader.use();
+    light_shader.set_vec3("lightColor", glm::vec3(1,1,1));
+    light_shader.set_vec3("objectColor", glm::vec3(1,0.5,0.31));
+    light_shader.set_mat4("projection", projection);
+    context.shaders.push_back(light_shader);
+
+    u32 n_cubes = 3;
+    const glm::vec3 center = origin;
+    const float side = 1;
+    for (u32 i = 0; i < n_cubes; ++i)
+    {
+        context.objects.push_back(gen_random_cube(center, side,
+                                                  context.shaders.size() - 1, VAO));
+    }
+
+
+    //shader used to render light sources
+    Shader light_source_shader = Shader("shaders/light_source_vertex.glsl",
+                                        "shaders/light_source_fragment.glsl");
     light_source_shader.use();
     light_source_shader.set_vec3("lightColor", glm::vec3(1,1,1));
-    light_source_shader.set_vec3("objectColor", glm::vec3(1,0,0));
     light_source_shader.set_mat4("projection", projection);
+    context.shaders.push_back(light_source_shader);
+    create_light_source_data(context.shaders.size() - 1);
 
-    shader_program.use();
+    light_shader.use();
+
+    std::clog << "n world objects: " << context.objects.size() << std::endl;
 
     return SDL_APP_CONTINUE;
 }
@@ -538,13 +489,14 @@ void camera_rotate(float delta_x, float delta_y)
 SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
 {
 
-    ImGui_ImplSDL3_ProcessEvent(event);
-    ImGuiIO& io = ImGui::GetIO();
+    // ImGui_ImplSDL3_ProcessEvent(event);
+    // ImGuiIO& io = ImGui::GetIO();
 
-    if (io.WantCaptureMouse)
-    {
-        std::clog << "want to capture mouse" << std::endl;
-    }
+    // if (io.WantCaptureMouse)
+    // {
+    //     std::clog << "want to capture mouse" << std::endl;
+    //     return SDL_APP_CONTINUE;
+    // }
 
     switch (event->type)
     {
@@ -576,32 +528,15 @@ SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
             break;
         }
 
-        case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        {
-            key_handler.left_click = true;
-            SDL_SetWindowRelativeMouseMode(window, true);
-            break;
-        }
-        case SDL_EVENT_MOUSE_BUTTON_UP:
-        {
-            key_handler.left_click = false;
-            SDL_SetWindowRelativeMouseMode(window, false);
-            break;
-        }
-
         case SDL_EVENT_MOUSE_MOTION:
         {
             //dragging mouse while holding left click rotates camera
-            if (key_handler.left_click)
-            {
-                auto delta_x = -event->motion.xrel * mouse_sens_multiplier;
-                auto delta_y = -event->motion.yrel * mouse_sens_multiplier;
+            auto delta_x = -event->motion.xrel * mouse_sens_multiplier;
+            auto delta_y = -event->motion.yrel * mouse_sens_multiplier;
 
-                // std::clog << "mouse relative movement x: " << event->motion.xrel << "\n";
-                // std::clog << "mouse relative movement y: " << event->motion.yrel << std::endl;
-
-                camera_rotate(delta_x, delta_y);
-            }
+            // std::clog << "mouse relative movement x: " << event->motion.xrel << "\n";
+            // std::clog << "mouse relative movement y: " << event->motion.yrel << std::endl;
+            camera_rotate(delta_x, delta_y);
             break;
         }
 
@@ -632,6 +567,15 @@ void move_camera(u64 delta_time)
     {
         camera.position -= speed * camera.right;
     }
+    if (get_key_state(key_handler, SDL_SCANCODE_E))
+    {
+        camera.position += speed * camera.up;
+    }
+    if (get_key_state(key_handler, SDL_SCANCODE_Q))
+    {
+        camera.position -= speed * camera.up;
+    }
+
 
     camera.last_speed = speed;
 }
@@ -653,15 +597,17 @@ void update_camera(u64 delta_time)
 
     view = glm::lookAt(camera.position, camera.position + camera.front, camera.up);
 
-    shader_program.use();
-    //buffer it
-    // u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
-    // glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
-    shader_program.set_mat4("view", view);
+    for (auto& shader : context.shaders)
+    {
+        shader.use();
+        //buffer it
+        // u32 view_loc = glGetUniformLocation(shader_program.m_id, "view");
+        // glUniformMatrix4fv(view_loc, 1, GL_FALSE, glm::value_ptr(view));
+        shader.set_mat4("view", view);
 
-
-    light_source_shader.use();
-    light_source_shader.set_mat4("view", view);
+        // light_source_shader.use();
+        // light_source_shader.set_mat4("view", view);
+    }
 
     //debug camera position stuff
     static u64 delta_time_acc = 0;
@@ -673,14 +619,15 @@ void update_camera(u64 delta_time)
         // std::clog << "camera speed: " << camera.last_speed << std::endl;
         delta_time_acc = 0;
     }
+
 }
 
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
-    ImGui::ShowDemoWindow(); // Show demo window! :)
+    // ImGui_ImplOpenGL3_NewFrame();
+    // ImGui_ImplSDL3_NewFrame();
+    // ImGui::NewFrame();
+    // ImGui::ShowDemoWindow(); // Show demo window! :)
 
 
     current_frame_time = SDL_GetTicksNS();
@@ -688,43 +635,44 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     previous_frame_time = current_frame_time;
 
 
-    update_camera(delta_time);
-
-    //model matrix (uniform)
-    model = glm::mat4(1.0F);
-    model = glm::translate(model, glm::vec3(0.0F, 1, -2.0F));
-
-
-    shader_program.use();
-    shader_program.set_mat4("model", model);
-
-    glBindVertexArray(context.vaos[0]);
-    // glBindBuffer(GL_ARRAY_BUFFER, context.vbos[0]);
-    // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, context.ebos[0]);
-
-    glClearColor(0.8, 0.8, 1.0, 1.0);
+    glClearColor(0.2, 0.2, 0.2, 1.0);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    //draw using the indices contained in the active EBO
-    glDrawElements(GL_TRIANGLES, context.objects_draw_indices[0].size(),
-                   GL_UNSIGNED_INT, 0);
+    update_camera(delta_time);
+
+    // glBindVertexArray(context.vaos[0]);
 
 
-    //light stuff
-    light_source_shader.use();
-    glBindVertexArray(context.vaos[1]);
+    //render objects
 
-    light_source_shader.set_mat4("model", model);
+    for(auto& world_object : context.objects)
+    {
+        Shader& object_shader = context.shaders[world_object.shader];
+        object_shader.use();
+        object_shader.set_mat4("model", world_object.model);
 
-    glDrawElements(GL_TRIANGLES, context.objects_draw_indices[1].size(),
-                   GL_UNSIGNED_INT, 0);
+        glBindVertexArray(world_object.vao);
+        glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
+    }
+
+    glBindVertexArray(0);
+
+    //light source stuff
+    // light_source_shader.use();
+    // glBindVertexArray(context.vaos[1]);
+    //
+    // light_source_shader.set_mat4("model", model);
+    //
+    // glDrawElements(GL_TRIANGLES, context.objects_draw_indices[1].size(),
+    //                GL_UNSIGNED_INT, 0);
 
 
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    // ImGui::Render();
+    // ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    SDL_RenderPresent(renderer);
+    // SDL_RenderPresent(renderer);
+    SDL_GL_SwapWindow(window);
 
 
     glBindVertexArray(0);
@@ -735,9 +683,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 void SDL_AppQuit(void *appstate, SDL_AppResult res)
 {
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL3_Shutdown();
-    ImGui::DestroyContext();
+    // ImGui_ImplOpenGL3_Shutdown();
+    // ImGui_ImplSDL3_Shutdown();
+    // ImGui::DestroyContext();
 }
 
 
