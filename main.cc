@@ -100,9 +100,10 @@ static u64 previous_frame_time = 0;
 
 struct WorldObject
 {
+    glm::mat4 model;
+    glm::vec3 position;
     u32 vao;
     u32 shader;
-    glm::mat4 model;
 };
 
 struct WorldData
@@ -134,7 +135,23 @@ inline void push_floats(std::vector<float>& v, const glm::vec2& x)
     v.push_back(x.y);
 }
 
-WorldObject gen_random_cube(glm::vec3 center, float side, u32 shader_id, u32 vao_id) {
+WorldObject gen_terrain(u32 shader_id, u32 vao_id)
+{
+    glm::mat4 model(1.0F);
+
+    const glm::vec3 position(0,-30,0);
+    model = glm::translate(model, position);
+    float random_scale = 50.0F;
+    model = glm::scale(model, glm::vec3(random_scale));
+
+    WorldObject random_cube {.model = model,
+        .position = position, .vao = vao_id, .shader = shader_id, };
+
+    return random_cube;
+};
+
+WorldObject gen_random_cube(glm::vec3 center, float side, u32 shader_id, u32 vao_id)
+{
 
     (void) side;
     (void) center;
@@ -145,7 +162,8 @@ WorldObject gen_random_cube(glm::vec3 center, float side, u32 shader_id, u32 vao
     float random_scale = glm::linearRand(0.0F,3.0F);
     random_model = glm::scale(random_model, glm::vec3(random_scale));
 
-    WorldObject random_cube {.vao = vao_id, .shader = shader_id, .model = random_model};
+    WorldObject random_cube {.model = random_model,
+        .position = random_vec, .vao = vao_id, .shader = shader_id, };
     return random_cube;
 }
 
@@ -188,7 +206,7 @@ void create_light_source_data(u32 light_source_shader_id)
                  cube_vertices, GL_STATIC_DRAW);
 
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
     glBindVertexArray(0);
@@ -270,11 +288,11 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     std::clog << "size of cube_vertices: " << N_CUBE_VERTICES << std::endl;
 
     //vertices
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
     //texture coordinates
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
 
@@ -371,6 +389,19 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     current_frame_time = SDL_GetTicksNS();
     previous_frame_time = current_frame_time;
 
+
+
+    //shader used to render light sources
+    Shader light_source_shader = Shader("shaders/light_source_vertex.glsl",
+                                        "shaders/light_source_fragment.glsl");
+    light_source_shader.use();
+    light_source_shader.set_vec3("lightColor", glm::vec3(1,1,1));
+    light_source_shader.set_mat4("projection", projection);
+    context.shaders.push_back(light_source_shader);
+    create_light_source_data(context.shaders.size() - 1);
+
+
+
     //shader used to render color + lightning
     Shader light_shader = Shader("shaders/lightning_vertex.glsl",
                                  "shaders/lightning_fragment.glsl");
@@ -378,6 +409,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     light_shader.set_vec3("lightColor", glm::vec3(1,1,1));
     light_shader.set_vec3("objectColor", glm::vec3(1,0.5,0.31));
     light_shader.set_mat4("projection", projection);
+    light_shader.set_vec3("lightPosition", context.objects[0].position);
     context.shaders.push_back(light_shader);
 
     u32 n_cubes = 3;
@@ -389,15 +421,8 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
                                                   context.shaders.size() - 1, VAO));
     }
 
+    context.objects.push_back(gen_terrain(context.shaders.size() - 1, VAO));
 
-    //shader used to render light sources
-    Shader light_source_shader = Shader("shaders/light_source_vertex.glsl",
-                                        "shaders/light_source_fragment.glsl");
-    light_source_shader.use();
-    light_source_shader.set_vec3("lightColor", glm::vec3(1,1,1));
-    light_source_shader.set_mat4("projection", projection);
-    context.shaders.push_back(light_source_shader);
-    create_light_source_data(context.shaders.size() - 1);
 
     light_shader.use();
 
@@ -567,6 +592,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     update_camera(delta_time);
+
+    context.shaders[1].set_vec3("viewPosition", camera.position);
 
     //render objects
     for(auto& world_object : context.objects)
