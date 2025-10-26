@@ -13,6 +13,7 @@
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
 #include <glm/gtc/random.hpp>
+#include <string>
 #include <vector>
 
 #define SDL_MAIN_USE_CALLBACKS 1
@@ -106,10 +107,32 @@ struct Material
 	float shininess;
 };
 
+
+// mainly used by point lights.
+// direction could be used by spot lights. Same thing goes for cut off.
+struct LightData
+{
+    glm::vec3 direction;
+
+    glm::vec3 ambient;
+    glm::vec3 diffuse;
+    glm::vec3 reflection;
+
+    float constant;
+    float linear;
+    float quadratic;
+
+    float innerCutOff;
+    float outerCutOff;
+};
+
 struct WorldObject
 {
     glm::mat4 model;
     glm::vec3 position;
+
+    LightData light;
+
     u32 vao;
     u32 shader;
     u32 material_id;
@@ -128,6 +151,7 @@ struct WorldData
     std::vector<Shader> shaders;
 
     std::vector<WorldObject> objects;
+    std::vector<WorldObject> light_emitting_objects;
 
     std::vector<Material> materials;
 };
@@ -232,10 +256,39 @@ void create_light_source_data(u32 light_source_shader_id)
     context.vbos.push_back(light_vbo);
     context.vaos.push_back(light_vao);
 
-    context.objects.push_back(gen_random_cube(origin, 1.0F, light_source_shader_id,
-                                              light_vao)
-                              );
+    WorldObject light_source =
+        gen_random_cube(origin, 1.0F, light_source_shader_id, light_vao);
+
+    light_source.light = LightData {
+        .ambient = glm::vec3(0.2F),
+        .diffuse = glm::vec3(0.5F),
+        .reflection = glm::vec3(1.0F),
+        .constant = 1.0F,
+        .linear = 0.09F,
+        .quadratic = 0.032F
+    };
+
+    context.light_emitting_objects.push_back(light_source);
 }
+
+void update_light_uniforms(Shader& shader)
+{
+    for(u32 i = 0; i < context.light_emitting_objects.size(); ++i)
+    {
+        const auto& light_object = context.light_emitting_objects[i];
+        const std::string uniform_base_name = "pointLights";
+        auto uniform_light = uniform_base_name + "[" + std::to_string(i) + "]";
+
+        shader.set_vec3(uniform_light + ".position", light_object.position);
+        shader.set_vec3(uniform_light + ".ambient", light_object.light.ambient);
+        shader.set_vec3(uniform_light + ".diffuse", light_object.light.diffuse);
+        shader.set_vec3(uniform_light + ".reflection", light_object.light.reflection);
+        shader.set_float(uniform_light + ".constant", light_object.light.constant);
+        shader.set_float(uniform_light + ".linear", light_object.light.linear);
+        shader.set_float(uniform_light + ".quadratic", light_object.light.quadratic);
+    }
+}
+
 
 void imgui_init()
 {
@@ -262,13 +315,13 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
 
-    if (!SDL_CreateWindowAndRenderer("example", 600, 400, SDL_WINDOW_RESIZABLE, &window, &renderer))
+    if (!SDL_CreateWindowAndRenderer("example", 1920, 1080, SDL_WINDOW_RESIZABLE, &window, &renderer))
     {
         SDL_Log("couldn't create window/renderer");
         return SDL_APP_FAILURE;
     }
 
-    SDL_SetRenderLogicalPresentation(renderer, 600, 400, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    SDL_SetRenderLogicalPresentation(renderer, 1920, 1080, SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
     SDL_SetWindowRelativeMouseMode(window, true);
 
@@ -281,7 +334,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
         std::clog << "failed to initialize GLAD" << std::endl;
         return SDL_APP_FAILURE;
     }
-    glViewport(0, 0, 600, 400);
+    glViewport(0, 0, 1920, 1080);
 
     glEnable(GL_DEPTH_TEST);
 
@@ -383,6 +436,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     context.shaders.push_back(light_source_shader);
     create_light_source_data(context.shaders.size() - 1);
 
+    const int n_light_sources = context.light_emitting_objects.size();
 
 
     //shader used to render color + lightning
@@ -394,10 +448,22 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     light_shader.set_int("material.diffuse", 1);
     light_shader.set_int("material.reflection", 2);
 
-    light_shader.set_vec3("light.position", context.objects[0].position);
-    light_shader.set_vec3("light.ambient", glm::vec3(0.2,0.2,0.2));
-    light_shader.set_vec3("light.diffuse", glm::vec3(0.5, 0.5, 0.5));
-    light_shader.set_vec3("light.reflection", glm::vec3(1, 1, 1));
+    light_shader.set_int("nPointLights", n_light_sources);
+
+    update_light_uniforms(light_shader);
+
+    light_shader.set_vec3("spotLight.position", camera.position);
+    light_shader.set_vec3("spotLight.direction", camera.front);
+    light_shader.set_vec3("spotLight.ambient", glm::vec3(0.2,0.2,0.2));
+    light_shader.set_vec3("spotLight.diffuse", glm::vec3(0.5, 0.5, 0.5));
+    light_shader.set_vec3("spotLight.reflection", glm::vec3(1, 1, 1));
+    // light_shader.set_float("spotLight.constant", 1.0F);
+    // light_shader.set_float("spotLight.linear", 0.09F);
+    // light_shader.set_float("spotLight.quadratic", 0.032F);
+    light_shader.set_float("spotLight.innerCutOff", glm::cos(glm::radians(12.5F)));
+    light_shader.set_float("spotLight.outerCutOff", glm::cos(glm::radians(17.5F)));
+
+
     context.shaders.push_back(light_shader);
 
     u32 n_cubes = 10;
@@ -573,17 +639,20 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     u64 delta_time = current_frame_time - previous_frame_time;
     previous_frame_time = current_frame_time;
 
-    auto current_ms_time = SDL_GetTicks()/500.0;
-    float sin_time = glm::max(glm::sin(current_ms_time), 0.0);
-    glm::vec3 light_color (sin_time * 2.0F, glm::cos(current_ms_time) * 2.0F, sin_time * 1.3F);
+    // auto current_ms_time = SDL_GetTicks()/500.0;
+    // float sin_time = glm::max(glm::sin(current_ms_time), 0.0);
+    // glm::vec3 light_color (sin_time * 2.0F, glm::cos(current_ms_time) * 2.0F, sin_time * 1.3F);
 
-    glClearColor(0.2, 0.2, 0.2, 1.0);
+    glClearColor(0.1, 0.1, 0.1, 1.0);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     update_camera(delta_time);
 
     context.shaders[1].set_vec3("viewPosition", camera.position);
+
+    context.shaders[1].set_vec3("spotLight.position", camera.position);
+    context.shaders[1].set_vec3("spotLight.direction", camera.front);
 
     //render objects
     for(auto& world_object : context.objects)
@@ -594,12 +663,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
         if (object_shader.has_uniform("material.shininess"))
         {
-            object_shader.set_vec3("light.ambient", 0.15F * light_color);
-            object_shader.set_vec3("light.diffuse", 0.5F * light_color);
+            // object_shader.set_vec3("light.ambient", 0.15F * light_color);
+            // object_shader.set_vec3("light.diffuse", 0.5F * light_color);
 
             const auto& material = context.materials[world_object.material_id];
-            // object_shader.set_vec3("material.ambient", material.ambient);
-            // object_shader.set_vec3("material.diffuse", material.diffuse);
             object_shader.set_vec3("material.reflection", material.reflection);
             object_shader.set_float("material.shininess", material.shininess);
         }
@@ -607,6 +674,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         glBindVertexArray(world_object.vao);
         glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
     }
+
+    //render light emitting objects
+    for(auto& light_world_object : context.light_emitting_objects)
+    {
+        Shader& object_shader = context.shaders[light_world_object.shader];
+        object_shader.use();
+        object_shader.set_mat4("model", light_world_object.model);
+
+        glBindVertexArray(light_world_object.vao);
+        glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
+    }
+
 
     glBindVertexArray(0);
 
