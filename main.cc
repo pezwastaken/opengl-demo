@@ -98,12 +98,21 @@ static KeyHandler key_handler {0};
 static u64 current_frame_time = 0;
 static u64 previous_frame_time = 0;
 
+struct Material
+{
+    glm::vec3 ambient;
+    glm::vec3 diffuse;
+    glm::vec3 reflection;
+	float shininess;
+};
+
 struct WorldObject
 {
     glm::mat4 model;
     glm::vec3 position;
     u32 vao;
     u32 shader;
+    u32 material_id;
 };
 
 struct WorldData
@@ -119,6 +128,8 @@ struct WorldData
     std::vector<Shader> shaders;
 
     std::vector<WorldObject> objects;
+
+    std::vector<Material> materials;
 };
 
 static WorldData context {};
@@ -145,7 +156,7 @@ WorldObject gen_terrain(u32 shader_id, u32 vao_id)
     model = glm::scale(model, glm::vec3(random_scale));
 
     WorldObject random_cube {.model = model,
-        .position = position, .vao = vao_id, .shader = shader_id, };
+        .position = position, .vao = vao_id, .shader = shader_id, .material_id = 0};
 
     return random_cube;
 };
@@ -157,13 +168,20 @@ WorldObject gen_random_cube(glm::vec3 center, float side, u32 shader_id, u32 vao
     (void) center;
 
     glm::mat4 random_model(1.0F);
-    auto random_vec = glm::ballRand(5.0F);
+    auto random_vec = glm::ballRand(8.0F);
     random_model = glm::translate(random_model, random_vec);
+
+    auto random_rotation_axis = glm::ballRand(1.0F);
+    random_model = glm::rotate(random_model, glm::radians((float)glm::linearRand(0,180)),
+                               random_rotation_axis);
+
     float random_scale = glm::linearRand(0.0F,3.0F);
     random_model = glm::scale(random_model, glm::vec3(random_scale));
 
+    //FIXME: material id
     WorldObject random_cube {.model = random_model,
-        .position = random_vec, .vao = vao_id, .shader = shader_id, };
+        .position = random_vec, .vao = vao_id, .shader = shader_id, .material_id = 0};
+
     return random_cube;
 }
 
@@ -206,7 +224,7 @@ void create_light_source_data(u32 light_source_shader_id)
                  cube_vertices, GL_STATIC_DRAW);
 
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
     glBindVertexArray(0);
@@ -288,12 +306,16 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     std::clog << "size of cube_vertices: " << N_CUBE_VERTICES << std::endl;
 
     //vertices
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
-    //texture coordinates
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    //normal vectors
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+
+    //texture coordinates
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
 
 
     context.vbos.push_back(VBO);
@@ -303,75 +325,31 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     //flip the images vertically on load
     stbi_set_flip_vertically_on_load(true);
 
-    //load image
-    int width, height, n_channels;
-    unsigned char* data = stbi_load("textures/container.jpg", &width, &height, &n_channels, 0);
-    if (!data)
+    u32 texture1;
+    bool texture_loaded = load_texture("textures/container.jpg", texture1, GL_TEXTURE0,
+                                       GL_TEXTURE_2D);
+    if (!texture_loaded)
     {
-        std::clog << "couldn't load image " << std::endl;
         return SDL_APP_FAILURE;
     }
 
-
-    //generate texture object
-    u32 texture;
-    glGenTextures(1, &texture);
-
-    //activate the 0th texture (usually active by default) and then bind the new texture to it
-    glActiveTexture(GL_TEXTURE0);
-    //bind it so we can configure it
-    glBindTexture(GL_TEXTURE_2D, texture);
-
-    //wrap mode
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    //downscaling and upscaling. on downscaling use mipmaps and on upscaling linear filtering
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    //generate texture
-    glTexImage2D(GL_TEXTURE_2D, 0,GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-    //generate mipmaps automatically
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    //free stb image
-    stbi_image_free(data);
-
-
-
-    //another image
-    data = stbi_load("textures/awesomeface.png", &width, &height, &n_channels, 0);
-    if (!data)
-    {
-        std::clog << "couldn't load image " << std::endl;
-        return SDL_APP_FAILURE;
-    }
-
-    //generate texture object
+    //diffuse map
     u32 texture2;
-    glGenTextures(1, &texture2);
+    texture_loaded = load_texture("textures/container2.png", texture2, GL_TEXTURE1,
+                                       GL_TEXTURE_2D);
+    if (!texture_loaded)
+    {
+        return SDL_APP_FAILURE;
+    }
 
-    //activate the 1th texture
-    glActiveTexture(GL_TEXTURE1);
-    //bind it so we can configure it
-    glBindTexture(GL_TEXTURE_2D, texture2);
-
-    //wrap mode
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    //downscaling and upscaling. on downscaling use mipmaps and on upscaling linear filtering
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    //generate texture
-    glTexImage2D(GL_TEXTURE_2D, 0,GL_RGB, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    //generate mipmaps automatically
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    //free stb image
-    stbi_image_free(data);
+    //specular map
+    u32 texture3;
+    texture_loaded = load_texture("textures/container2_specular.png", texture3, GL_TEXTURE2,
+                                       GL_TEXTURE_2D);
+    if (!texture_loaded)
+    {
+        return SDL_APP_FAILURE;
+    }
 
 
     //bind the correct VAO (suppose multiple objects)
@@ -390,6 +368,11 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     previous_frame_time = current_frame_time;
 
 
+    //push default material
+    Material material {.ambient = {1.0, 0.5, 0.31}, .diffuse = {1.0, 0.5, 0.31},
+                       .reflection = {0.5, 0.5, 0.5}, .shininess = 32.0F};
+
+    context.materials.push_back(material);
 
     //shader used to render light sources
     Shader light_source_shader = Shader("shaders/light_source_vertex.glsl",
@@ -406,13 +389,18 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     Shader light_shader = Shader("shaders/lightning_vertex.glsl",
                                  "shaders/lightning_fragment.glsl");
     light_shader.use();
-    light_shader.set_vec3("lightColor", glm::vec3(1,1,1));
-    light_shader.set_vec3("objectColor", glm::vec3(1,0.5,0.31));
     light_shader.set_mat4("projection", projection);
-    light_shader.set_vec3("lightPosition", context.objects[0].position);
+
+    light_shader.set_int("material.diffuse", 1);
+    light_shader.set_int("material.reflection", 2);
+
+    light_shader.set_vec3("light.position", context.objects[0].position);
+    light_shader.set_vec3("light.ambient", glm::vec3(0.2,0.2,0.2));
+    light_shader.set_vec3("light.diffuse", glm::vec3(0.5, 0.5, 0.5));
+    light_shader.set_vec3("light.reflection", glm::vec3(1, 1, 1));
     context.shaders.push_back(light_shader);
 
-    u32 n_cubes = 3;
+    u32 n_cubes = 10;
     const glm::vec3 center = origin;
     const float side = 1;
     for (u32 i = 0; i < n_cubes; ++i)
@@ -581,11 +569,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     // ImGui::NewFrame();
     // ImGui::ShowDemoWindow(); // Show demo window! :)
 
-
     current_frame_time = SDL_GetTicksNS();
     u64 delta_time = current_frame_time - previous_frame_time;
     previous_frame_time = current_frame_time;
 
+    auto current_ms_time = SDL_GetTicks()/500.0;
+    float sin_time = glm::max(glm::sin(current_ms_time), 0.0);
+    glm::vec3 light_color (sin_time * 2.0F, glm::cos(current_ms_time) * 2.0F, sin_time * 1.3F);
 
     glClearColor(0.2, 0.2, 0.2, 1.0);
 
@@ -601,6 +591,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         Shader& object_shader = context.shaders[world_object.shader];
         object_shader.use();
         object_shader.set_mat4("model", world_object.model);
+
+        if (object_shader.has_uniform("material.shininess"))
+        {
+            object_shader.set_vec3("light.ambient", 0.15F * light_color);
+            object_shader.set_vec3("light.diffuse", 0.5F * light_color);
+
+            const auto& material = context.materials[world_object.material_id];
+            // object_shader.set_vec3("material.ambient", material.ambient);
+            // object_shader.set_vec3("material.diffuse", material.diffuse);
+            object_shader.set_vec3("material.reflection", material.reflection);
+            object_shader.set_float("material.shininess", material.shininess);
+        }
 
         glBindVertexArray(world_object.vao);
         glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);

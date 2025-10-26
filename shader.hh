@@ -117,7 +117,10 @@ struct Shader
                     1, GL_FALSE, glm::value_ptr(value));
     }
 
-
+    inline bool has_uniform(const char* name) const
+    {
+        return glGetUniformLocation(m_id, name) != -1;
+    }
 
     //create a new shader program by linking the given shaders
     static u32 create_shader_program_obj(std::vector<u32> shaders)
