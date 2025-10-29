@@ -1,6 +1,4 @@
 #include "SDL3/SDL_mouse.h"
-#include "key_handler.hh"
-#include "shader.hh"
 #include <GLES2/gl2.h>
 #include <cstdint>
 #include <glm/common.hpp>
@@ -38,8 +36,11 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_opengl3.h"
 
+#define STB_IMAGE_IMPLEMENTATION
 #include "utils.hh"
-
+#include "key_handler.hh"
+#include "shader.hh"
+#include "mesh.hh"
 
 static SDL_Window* window = nullptr;
 static SDL_Renderer* renderer = nullptr;
@@ -113,6 +114,7 @@ struct Material
 struct LightData
 {
     glm::vec3 direction;
+    glm::vec3 source_color;
 
     glm::vec3 ambient;
     glm::vec3 diffuse;
@@ -128,10 +130,12 @@ struct LightData
 
 struct WorldObject
 {
-    glm::mat4 model;
+    glm::mat4 model_matrix;
     glm::vec3 position;
 
     LightData light;
+
+    Model model;
 
     u32 vao;
     u32 shader;
@@ -152,6 +156,8 @@ struct WorldData
 
     std::vector<WorldObject> objects;
     std::vector<WorldObject> light_emitting_objects;
+
+    std::vector<LightData> directional_lights;
 
     std::vector<Material> materials;
 };
@@ -179,7 +185,7 @@ WorldObject gen_terrain(u32 shader_id, u32 vao_id)
     float random_scale = 50.0F;
     model = glm::scale(model, glm::vec3(random_scale));
 
-    WorldObject random_cube {.model = model,
+    WorldObject random_cube {.model_matrix = model,
         .position = position, .vao = vao_id, .shader = shader_id, .material_id = 0};
 
     return random_cube;
@@ -203,7 +209,7 @@ WorldObject gen_random_cube(glm::vec3 center, float side, u32 shader_id, u32 vao
     random_model = glm::scale(random_model, glm::vec3(random_scale));
 
     //FIXME: material id
-    WorldObject random_cube {.model = random_model,
+    WorldObject random_cube {.model_matrix = random_model,
         .position = random_vec, .vao = vao_id, .shader = shader_id, .material_id = 0};
 
     return random_cube;
@@ -256,19 +262,51 @@ void create_light_source_data(u32 light_source_shader_id)
     context.vbos.push_back(light_vbo);
     context.vaos.push_back(light_vao);
 
-    WorldObject light_source =
-        gen_random_cube(origin, 1.0F, light_source_shader_id, light_vao);
+    const u32 n_light_sources = 1;
 
-    light_source.light = LightData {
-        .ambient = glm::vec3(0.2F),
-        .diffuse = glm::vec3(0.5F),
+    glm::vec3 colors[n_light_sources] = 
+    {
+        {0,1,0},
+            // {0,0,1},{0,0.5,0.5}, {0,0.8,0.8}, {0,0.8, 0.4}
+    };
+
+    for (u32 i = 0; i < n_light_sources; ++i)
+    {
+        WorldObject light_source =
+            gen_random_cube(origin, 1.0F, light_source_shader_id, light_vao);
+
+        auto sample_color = colors[i];
+
+        light_source.light = LightData {
+            .source_color = sample_color,
+            .ambient = glm::vec3(0.2F) * sample_color,
+            .diffuse = glm::vec3(0.5F) * sample_color,
+            .reflection = glm::vec3(1.0F),
+            .constant = 1.0F,
+            .linear = 0.09F,
+            .quadratic = 0.032F
+        };
+
+        context.light_emitting_objects.push_back(light_source);
+    }
+}
+
+void create_directional_light_source(u32 light_source_shader_id)
+{
+    glm::vec3 sample_color {1,1,1};
+
+    LightData directional_light {
+        .direction = glm::normalize(glm::vec3(-1,-1,0)),
+        .source_color = sample_color,
+        .ambient = glm::vec3(0.2F) * sample_color,
+        .diffuse = glm::vec3(0.5F) * sample_color,
         .reflection = glm::vec3(1.0F),
         .constant = 1.0F,
         .linear = 0.09F,
         .quadratic = 0.032F
     };
 
-    context.light_emitting_objects.push_back(light_source);
+    context.directional_lights.push_back(directional_light);
 }
 
 void update_light_uniforms(Shader& shader)
@@ -287,6 +325,13 @@ void update_light_uniforms(Shader& shader)
         shader.set_float(uniform_light + ".linear", light_object.light.linear);
         shader.set_float(uniform_light + ".quadratic", light_object.light.quadratic);
     }
+
+    const auto& directional_light = context.directional_lights[0];
+
+    shader.set_vec3("directionalLight.direction", directional_light.direction);
+    shader.set_vec3("directionalLight.ambient", directional_light.ambient);
+    shader.set_vec3("directionalLight.diffuse", directional_light.diffuse);
+    shader.set_vec3("directionalLight.reflection", directional_light.reflection);
 }
 
 
@@ -303,6 +348,10 @@ void imgui_init()
     ImGui_ImplOpenGL3_Init();
 
 }
+
+static u32 texture1;
+static u32 texture2;
+static u32 texture3;
 
 SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 {
@@ -378,31 +427,32 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     //flip the images vertically on load
     stbi_set_flip_vertically_on_load(true);
 
-    u32 texture1;
-    bool texture_loaded = load_texture("textures/container.jpg", texture1, GL_TEXTURE0,
-                                       GL_TEXTURE_2D);
-    if (!texture_loaded)
-    {
-        return SDL_APP_FAILURE;
-    }
 
-    //diffuse map
-    u32 texture2;
-    texture_loaded = load_texture("textures/container2.png", texture2, GL_TEXTURE1,
-                                       GL_TEXTURE_2D);
-    if (!texture_loaded)
-    {
-        return SDL_APP_FAILURE;
-    }
+    //load default pink diffuse map and default specular map.
+    //used by models that don't have any
+    //
+    load_default_textures();
 
-    //specular map
-    u32 texture3;
-    texture_loaded = load_texture("textures/container2_specular.png", texture3, GL_TEXTURE2,
-                                       GL_TEXTURE_2D);
-    if (!texture_loaded)
-    {
-        return SDL_APP_FAILURE;
-    }
+    //
+    // //diffuse map
+    // // u32 texture2;
+    // texture_loaded = load_texture("textures/container2.png", texture2, GL_TEXTURE_2D);
+    // if (!texture_loaded)
+    // {
+    //     return SDL_APP_FAILURE;
+    // }
+    // glActiveTexture(GL_TEXTURE1);
+    // glBindTexture(GL_TEXTURE_2D, texture2);
+    //
+    // //specular map
+    // // u32 texture3;
+    // texture_loaded = load_texture("textures/container2_specular.png", texture3, GL_TEXTURE_2D);
+    // if (!texture_loaded)
+    // {
+    //     return SDL_APP_FAILURE;
+    // }
+    // glActiveTexture(GL_TEXTURE2);
+    // glBindTexture(GL_TEXTURE_2D, texture3);
 
 
     //bind the correct VAO (suppose multiple objects)
@@ -435,6 +485,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     light_source_shader.set_mat4("projection", projection);
     context.shaders.push_back(light_source_shader);
     create_light_source_data(context.shaders.size() - 1);
+    create_directional_light_source(context.shaders.size() - 1);
 
     const int n_light_sources = context.light_emitting_objects.size();
 
@@ -445,8 +496,8 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     light_shader.use();
     light_shader.set_mat4("projection", projection);
 
-    light_shader.set_int("material.diffuse", 1);
-    light_shader.set_int("material.reflection", 2);
+    // light_shader.set_int("material.texture_diffuse", 1);
+    // light_shader.set_int("material.texture_specular", 2);
 
     light_shader.set_int("nPointLights", n_light_sources);
 
@@ -463,19 +514,32 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     light_shader.set_float("spotLight.innerCutOff", glm::cos(glm::radians(12.5F)));
     light_shader.set_float("spotLight.outerCutOff", glm::cos(glm::radians(17.5F)));
 
-
     context.shaders.push_back(light_shader);
 
-    u32 n_cubes = 10;
-    const glm::vec3 center = origin;
-    const float side = 1;
-    for (u32 i = 0; i < n_cubes; ++i)
-    {
-        context.objects.push_back(gen_random_cube(center, side,
-                                                  context.shaders.size() - 1, VAO));
-    }
+    // u32 n_cubes = 10;
+    // const glm::vec3 center = origin;
+    // const float side = 1;
+    // for (u32 i = 0; i < n_cubes; ++i)
+    // {
+    //     context.objects.push_back(gen_random_cube(center, side,
+    //                                               context.shaders.size() - 1, VAO));
+    // }
 
-    context.objects.push_back(gen_terrain(context.shaders.size() - 1, VAO));
+    // context.objects.push_back(gen_terrain(context.shaders.size() - 1, VAO));
+
+    //setup sword model
+    Model sword_model;
+    model_init(sword_model, "models/diao-chan/source/DiaoChann.glb");
+
+    WorldObject sword;
+    sword.model_matrix = glm::mat4(1.0F);
+    sword.model_matrix = glm::translate(sword.model_matrix, glm::vec3(0,5,0));
+    sword.model_matrix = glm::scale(sword.model_matrix, glm::vec3(100));
+
+    sword.model = sword_model;
+    sword.shader = context.shaders.size() - 1;
+
+    context.objects.push_back(sword);
 
 
     light_shader.use();
@@ -639,10 +703,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     u64 delta_time = current_frame_time - previous_frame_time;
     previous_frame_time = current_frame_time;
 
-    // auto current_ms_time = SDL_GetTicks()/500.0;
-    // float sin_time = glm::max(glm::sin(current_ms_time), 0.0);
-    // glm::vec3 light_color (sin_time * 2.0F, glm::cos(current_ms_time) * 2.0F, sin_time * 1.3F);
-
     glClearColor(0.1, 0.1, 0.1, 1.0);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -654,33 +714,56 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     context.shaders[1].set_vec3("spotLight.position", camera.position);
     context.shaders[1].set_vec3("spotLight.direction", camera.front);
 
+    // glActiveTexture(GL_TEXTURE1);
+    // glBindTexture(GL_TEXTURE_2D, texture2);
+    //
+    // glActiveTexture(GL_TEXTURE2);
+    // glBindTexture(GL_TEXTURE_2D, texture3);
+
     //render objects
+    // for(auto& world_object : context.objects)
+    // {
+    //     Shader& object_shader = context.shaders[world_object.shader];
+    //     object_shader.use();
+    //     object_shader.set_mat4("model", world_object.model_matrix);
+    //
+    //     if (object_shader.has_uniform("material.shininess"))
+    //     {
+    //         const auto& material = context.materials[world_object.material_id];
+    //         object_shader.set_vec3("material.texture_specular", material.reflection);
+    //         object_shader.set_float("material.shininess", material.shininess);
+    //     }
+    //
+    //     glBindVertexArray(world_object.vao);
+    //     glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
+    // }
+
+    assert(context.shaders.size() == 2);
+    assert(context.objects.size() == 1);
+
+    //3d models
     for(auto& world_object : context.objects)
     {
         Shader& object_shader = context.shaders[world_object.shader];
         object_shader.use();
-        object_shader.set_mat4("model", world_object.model);
+        object_shader.set_mat4("model", world_object.model_matrix);
 
-        if (object_shader.has_uniform("material.shininess"))
-        {
-            // object_shader.set_vec3("light.ambient", 0.15F * light_color);
-            // object_shader.set_vec3("light.diffuse", 0.5F * light_color);
+        // object_shader.set_vec3("material.texture_specular", world_object.model..reflection);
+        // object_shader.set_vec3("material.texture_specular", material.reflection);
+        object_shader.set_float("material.shininess", 32.0F);
 
-            const auto& material = context.materials[world_object.material_id];
-            object_shader.set_vec3("material.reflection", material.reflection);
-            object_shader.set_float("material.shininess", material.shininess);
-        }
-
-        glBindVertexArray(world_object.vao);
-        glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
+        model_draw(world_object.model, object_shader);
     }
+
+
 
     //render light emitting objects
     for(auto& light_world_object : context.light_emitting_objects)
     {
         Shader& object_shader = context.shaders[light_world_object.shader];
         object_shader.use();
-        object_shader.set_mat4("model", light_world_object.model);
+        object_shader.set_mat4("model", light_world_object.model_matrix);
+        object_shader.set_vec3("lightColor", light_world_object.light.source_color);
 
         glBindVertexArray(light_world_object.vao);
         glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
