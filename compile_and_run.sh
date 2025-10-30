@@ -1,8 +1,7 @@
 #!/bin/bash
 
-cmake --build build
+cmake --build build && ./build/hello
 
-mv ./build/compile_commands.json .
+# mv ./build/compile_commands.json .
 
-./build/hello
 

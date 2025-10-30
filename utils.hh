@@ -4,6 +4,7 @@
 #include <assimp/scene.h>
 #include <cassert>
 #include <cstdint>
+#include <glm/ext/vector_float3.hpp>
 #include <iostream>
 
 #include "stb_image.h"
@@ -13,6 +14,12 @@ using u64 = uint64_t;
 
 #define TODO assert(false)
 #define UNREACHABLE assert(false)
+
+#define MAX_ENTITIES 1000U
+
+#define BLUE_MASK 0xFF
+#define GREEN_MASK 0xFF00
+#define RED_MASK 0xFF0000
 
 #define N_CUBE_VERTICES 36U
 static constexpr float cube_vertices[] = {
@@ -159,5 +166,13 @@ inline bool load_texture_from_scene(const aiScene& scene, const char* path, u32&
     return true;
 }
 
+inline u32 color_vec3_to_u32(glm::vec3 color)
+{
+    u32 red = color.x * 255U;
+    u32 green = color.y * 255U;
+    u32 blue = color.z * 255U;
+
+    return (blue + (green << 8) + (red << 16));
+}
 
 

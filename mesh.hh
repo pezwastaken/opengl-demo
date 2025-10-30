@@ -45,17 +45,19 @@ void mesh_init(Mesh& mesh, std::vector<Vertex> v, std::vector<u32> i,
 
 void mesh_draw(const Mesh& mesh);
 
-
 struct Model
 {
     std::vector<Mesh> meshes;
     std::string directory;
 
     std::map<std::string, Texture> loaded_textures;
+
+    glm::vec3 unique_color;
 };
 
 void model_init(Model& model, const std::string& path);
 void model_draw(const Model& model, Shader& shader);
+void model_draw_color_pick(const Model& model);
 
 void load_default_textures();
 

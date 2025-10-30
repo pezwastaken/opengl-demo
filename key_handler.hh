@@ -1,11 +1,15 @@
 #pragma once
 
 #include <array>
+#include <glm/ext/vector_float2.hpp>
 #include "SDL3/SDL_scancode.h"
 
 struct KeyHandler
 {
     std::array<bool, 512> keys {0};
+
+    glm::vec2 mouse_position {0};
+
     bool left_click = false;
     bool right_click = false;
 };

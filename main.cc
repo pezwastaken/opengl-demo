@@ -1,4 +1,3 @@
-#include "SDL3/SDL_mouse.h"
 #include <GLES2/gl2.h>
 #include <cstdint>
 #include <glm/common.hpp>
@@ -44,6 +43,9 @@
 
 static SDL_Window* window = nullptr;
 static SDL_Renderer* renderer = nullptr;
+
+#define BUFFER_WIDTH 1920U
+#define BUFFER_HEIGHT 1080U
 
 // //vertices with colors
 // static constexpr float vertices[] = {
@@ -161,6 +163,13 @@ struct WorldData
 
 static WorldData context {};
 
+static u32 color_pick_frame_buffer;
+static u32 color_pick_texture;
+
+//maps a unique color (expressed as 24 bit number) to the corresponding object index
+//in the context.objects vector
+static u32 color_pick_map[MAX_ENTITIES];
+
 inline void push_floats(std::vector<float>& v, const glm::vec3& x)
 {
     v.push_back(x.x);
@@ -171,6 +180,37 @@ inline void push_floats(std::vector<float>& v, const glm::vec2& x)
 {
     v.push_back(x.x);
     v.push_back(x.y);
+}
+
+void gen_color_pick_frame_buffer()
+{
+    glGenFramebuffers(1, &color_pick_frame_buffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, color_pick_frame_buffer);
+
+    glEnable(GL_DEPTH_TEST);
+
+    glGenTextures(1, &color_pick_texture);
+    glBindTexture(GL_TEXTURE_2D, color_pick_texture);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, BUFFER_WIDTH, BUFFER_HEIGHT, 0,
+                 GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+    //makes sure the colors do not get smoothed
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+
+    //bind texture to frame buffer
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D, color_pick_texture, 0);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cerr << "frame buffer incomplete" << std::endl;
+        exit(1);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 WorldObject gen_terrain(u32 shader_id, u32 vao_id)
@@ -362,15 +402,15 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
 
-    if (!SDL_CreateWindowAndRenderer("example", 1920, 1080, SDL_WINDOW_RESIZABLE, &window, &renderer))
+    if (!SDL_CreateWindowAndRenderer("example", BUFFER_WIDTH, BUFFER_HEIGHT, SDL_WINDOW_RESIZABLE, &window, &renderer))
     {
         SDL_Log("couldn't create window/renderer");
         return SDL_APP_FAILURE;
     }
 
-    SDL_SetRenderLogicalPresentation(renderer, 1920, 1080, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    SDL_SetRenderLogicalPresentation(renderer, BUFFER_WIDTH, BUFFER_HEIGHT, SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
-    SDL_SetWindowRelativeMouseMode(window, true);
+    // SDL_SetWindowRelativeMouseMode(window, true);
 
     std::clog << "window/renderer created" <<  std::endl;
 
@@ -381,7 +421,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
         std::clog << "failed to initialize GLAD" << std::endl;
         return SDL_APP_FAILURE;
     }
-    glViewport(0, 0, 1920, 1080);
+    glViewport(0, 0, BUFFER_WIDTH, BUFFER_HEIGHT);
 
     glEnable(GL_DEPTH_TEST);
 
@@ -469,6 +509,15 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     previous_frame_time = current_frame_time;
 
 
+    gen_color_pick_frame_buffer();
+
+    Shader color_pick_shader ("shaders/color_pick_vertex.glsl",
+                              "shaders/color_pick_fragment.glsl");
+    color_pick_shader.use();
+    color_pick_shader.set_mat4("projection", projection);
+    context.shaders.push_back(color_pick_shader);
+
+
     //push default material
     Material material {.ambient = {1.0, 0.5, 0.31}, .diffuse = {1.0, 0.5, 0.31},
                        .reflection = {0.5, 0.5, 0.5}, .shininess = 32.0F};
@@ -539,6 +588,11 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     context.objects.push_back(sword);
 
+    const u32 model1_color_id = color_vec3_to_u32(sword.model.unique_color);
+    std::clog << "model 1 color id: " << model1_color_id << std::endl;
+    //TODO: this map is pretty useless, it could be a direct map with no in between
+    color_pick_map[model1_color_id] = context.objects.size() - 1;
+
 
     std::clog << " -------------- \n\n";
 
@@ -554,6 +608,10 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     context.objects.push_back(road);
 
+    const u32 model2_color_id = color_vec3_to_u32(road.model.unique_color);
+    std::clog << "model 2 color id: " << model2_color_id << std::endl;
+    //TODO: this map is pretty useless, it could be a direct map with no in between
+    color_pick_map[model2_color_id] = context.objects.size() - 1;
 
 
     light_shader.use();
@@ -618,15 +676,34 @@ SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
             break;
         }
 
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        {
+            std::clog << "mouse click at: " << key_handler.mouse_position.x << ", "
+                    << key_handler.mouse_position.y << std::endl;
+
+            key_handler.left_click = true;
+            break;
+        }
+
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+        {
+            std::clog << "mouse click up" << std::endl;
+            key_handler.left_click = false;
+            break;
+        }
+
         case SDL_EVENT_MOUSE_MOTION:
         {
             //dragging mouse while holding left click rotates camera
             auto delta_x = -event->motion.xrel * mouse_sens_multiplier;
             auto delta_y = -event->motion.yrel * mouse_sens_multiplier;
 
+            key_handler.mouse_position.x = event->motion.x;
+            key_handler.mouse_position.y = event->motion.y;
+
             // std::clog << "mouse relative movement x: " << event->motion.xrel << "\n";
             // std::clog << "mouse relative movement y: " << event->motion.yrel << std::endl;
-            camera_rotate(delta_x, delta_y);
+            // camera_rotate(delta_x, delta_y);
             break;
         }
 
@@ -690,7 +767,6 @@ void update_camera(u64 delta_time)
     {
         shader.use();
         shader.set_mat4("view", view);
-
     }
 
     //debug camera position stuff
@@ -745,21 +821,16 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     previous_frame_time = current_frame_time;
 
     glClearColor(0.1, 0.1, 0.1, 1.0);
-
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     update_camera(delta_time);
 
-    context.shaders[1].set_vec3("viewPosition", camera.position);
+    context.shaders[2].use();
 
-    context.shaders[1].set_vec3("spotLight.position", camera.position);
-    context.shaders[1].set_vec3("spotLight.direction", camera.front);
+    context.shaders[2].set_vec3("viewPosition", camera.position);
 
-    // glActiveTexture(GL_TEXTURE1);
-    // glBindTexture(GL_TEXTURE_2D, texture2);
-    //
-    // glActiveTexture(GL_TEXTURE2);
-    // glBindTexture(GL_TEXTURE_2D, texture3);
+    context.shaders[2].set_vec3("spotLight.position", camera.position);
+    context.shaders[2].set_vec3("spotLight.direction", camera.front);
 
     //render objects
     // for(auto& world_object : context.objects)
@@ -779,8 +850,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     //     glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
     // }
 
-    assert(context.shaders.size() == 2);
-
     //3d models
     for(auto& world_object : context.objects)
     {
@@ -792,8 +861,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
         model_draw(world_object.model, object_shader);
     }
-
-
 
     //render light emitting objects
     for(auto& light_world_object : context.light_emitting_objects)
@@ -807,9 +874,18 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
     }
 
-
-    glBindVertexArray(0);
-
+    //TODO: handle resizing. Also the off screen one is not working :)
+    if(key_handler.left_click)
+    {
+        unsigned char pixel[3];
+        glReadPixels(key_handler.mouse_position.x,
+                     //FIXME: BUFFER_HEIGHT is wrong. It should use the current buffer height (depending on resize)
+                     BUFFER_HEIGHT - key_handler.mouse_position.y,
+                     1, 1,
+                     GL_RGB, GL_UNSIGNED_BYTE, pixel);
+        std::clog << "pixel color: " << (u32)pixel[0] << ", " << (u32)pixel[1] << ", "
+            << (u32)pixel[2] << std::endl;
+    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -818,6 +894,37 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     SDL_GL_SwapWindow(window);
 
 
+    //offscreen render with color pick buffer
+    //
+    glBindBuffer(GL_FRAMEBUFFER, color_pick_frame_buffer);
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    Shader& color_pick_shader = context.shaders[0];
+    color_pick_shader.use();
+
+    for(auto& world_object : context.objects)
+    {
+        color_pick_shader.set_vec3("color", world_object.model.unique_color);
+        color_pick_shader.set_mat4("model", world_object.model_matrix);
+        model_draw_color_pick(world_object.model);
+    }
+
+    // if(key_handler.left_click)
+    // {
+    //     std::clog << "checking pixel color" << std::endl;
+    //     unsigned char pixel[3];
+    //     glReadPixels(10,
+    //                  10,
+    //                  1, 1,
+    //                  GL_RGB, GL_UNSIGNED_BYTE, pixel);
+    //     std::clog << "pixel color: " << pixel[0] << ", " << pixel[1] << ", "
+    //         << pixel[2] << std::endl;
+    // }
+
+
+
+    glBindBuffer(GL_FRAMEBUFFER, 0);
     glBindVertexArray(0);
 
 
