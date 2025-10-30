@@ -76,8 +76,6 @@ static constexpr glm::vec3 world_right (1,0,0);
 struct Camera
 {
     glm::vec3 position;
-    glm::vec3 look_direction;
-    glm::vec3 target;
 
     glm::vec3 right;
     glm::vec3 up;
@@ -86,11 +84,10 @@ struct Camera
     glm::mat4 lookat;
 
     float last_speed;
-
 };
 
 static Camera camera;
-static constexpr float camera_speed = 4.0F;
+static constexpr float camera_speed = 6.0F;
 static constexpr float mouse_sens_multiplier = 0.1F;
 
 static bool in_relative_mode = false;
@@ -191,6 +188,7 @@ WorldObject gen_terrain(u32 shader_id, u32 vao_id)
     return random_cube;
 };
 
+//TODO: position should be the model matrix, just like the other objects
 WorldObject gen_random_cube(glm::vec3 center, float side, u32 shader_id, u32 vao_id)
 {
 
@@ -266,7 +264,7 @@ void create_light_source_data(u32 light_source_shader_id)
 
     glm::vec3 colors[n_light_sources] = 
     {
-        {0,1,0},
+        {1,0,0},
             // {0,0,1},{0,0.5,0.5}, {0,0.8,0.8}, {0,0.8, 0.4}
     };
 
@@ -279,13 +277,16 @@ void create_light_source_data(u32 light_source_shader_id)
 
         light_source.light = LightData {
             .source_color = sample_color,
-            .ambient = glm::vec3(0.2F) * sample_color,
-            .diffuse = glm::vec3(0.5F) * sample_color,
+            .ambient = 0.2F * sample_color,
+            .diffuse = 0.5F * sample_color,
             .reflection = glm::vec3(1.0F),
             .constant = 1.0F,
             .linear = 0.09F,
             .quadratic = 0.032F
         };
+
+        std::clog << "generating light source at: [ " << light_source.position.x
+            << ", " << light_source.position.y << ", " << light_source.position.z << "]" << std::endl;
 
         context.light_emitting_objects.push_back(light_source);
     }
@@ -298,12 +299,9 @@ void create_directional_light_source(u32 light_source_shader_id)
     LightData directional_light {
         .direction = glm::normalize(glm::vec3(-1,-1,0)),
         .source_color = sample_color,
-        .ambient = glm::vec3(0.2F) * sample_color,
-        .diffuse = glm::vec3(0.5F) * sample_color,
+        .ambient = 0.2F * sample_color,
+        .diffuse = 0.5F * sample_color,
         .reflection = glm::vec3(1.0F),
-        .constant = 1.0F,
-        .linear = 0.09F,
-        .quadratic = 0.032F
     };
 
     context.directional_lights.push_back(directional_light);
@@ -376,7 +374,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     std::clog << "window/renderer created" <<  std::endl;
 
-    // imgui_init();
+    imgui_init();
 
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
     {
@@ -462,7 +460,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     projection = glm::perspective(glm::radians(45.0F), 600.0F / 400.0F, 0.1F, 100.0F);
 
     //setup camera
-    camera = Camera {.position = glm::vec3(0.0F, 1.0F, 5.0F), .target = origin};
+    camera = Camera {.position = glm::vec3(0.0F, 1.0F, 5.0F), };
     camera.right = glm::vec3(1,0,0);
     camera.up = glm::vec3(0,1,0);
     camera.front = glm::vec3(0,0,-1);
@@ -527,19 +525,35 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     // context.objects.push_back(gen_terrain(context.shaders.size() - 1, VAO));
 
-    //setup sword model
-    Model sword_model;
-    model_init(sword_model, "models/diao-chan/source/DiaoChann.glb");
+    // setup model 1
+    Model model1;
+    model_init(model1, "models/diao-chan/source/DiaoChann.glb");
 
     WorldObject sword;
     sword.model_matrix = glm::mat4(1.0F);
-    sword.model_matrix = glm::translate(sword.model_matrix, glm::vec3(0,5,0));
+    sword.model_matrix = glm::translate(sword.model_matrix, glm::vec3(0,3,3));
     sword.model_matrix = glm::scale(sword.model_matrix, glm::vec3(100));
 
-    sword.model = sword_model;
+    sword.model = model1;
     sword.shader = context.shaders.size() - 1;
 
     context.objects.push_back(sword);
+
+
+    std::clog << " -------------- \n\n";
+
+    Model env_model;
+    model_init(env_model, "models/environment/scene.gltf");
+    WorldObject road;
+    road.model_matrix = glm::mat4(1.0F);
+    road.model_matrix = glm::translate(road.model_matrix, glm::vec3(0,3,0));
+    road.model_matrix = glm::scale(road.model_matrix, glm::vec3(2));
+
+    road.model = env_model;
+    road.shader = context.shaders.size() - 1;
+
+    context.objects.push_back(road);
+
 
 
     light_shader.use();
@@ -669,7 +683,6 @@ void update_camera(u64 delta_time)
     // float time = (SDL_GetTicks() / 500.0F);
     // float cam_x = glm::sin(time) * radius;
     // float cam_z = glm::cos(time) * radius;
-    // view = glm::lookAt(glm::vec3(cam_x, 0.0F, cam_z), camera.target, camera.up);
 
     view = glm::lookAt(camera.position, camera.position + camera.front, camera.up);
 
@@ -692,11 +705,39 @@ void update_camera(u64 delta_time)
 
 }
 
+void show_debug_info()
+{
+    // Transparent background
+    ImGui::SetNextWindowBgAlpha(0.35f);
+
+    ImGuiWindowFlags window_flags =
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize
+        | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+
+    if (ImGui::Begin("Debug overlay", NULL, window_flags))
+    {
+        // IMGUI_DEMO_MARKER("Examples/Simple Overlay");
+        ImGui::Text("Debug info\n");
+        ImGui::Separator();
+        ImGui::Text("Camera position: (%.1f, %.1f, %.1f)",
+                    camera.position.x, camera.position.y, camera.position.z);
+
+        ImGui::Text("Camera front direction: (%.1f, %.1f, %.1f)",
+                    camera.front.x, camera.front.y, camera.front.z);
+    }
+    ImGui::End();
+}
+
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
-    // ImGui_ImplOpenGL3_NewFrame();
-    // ImGui_ImplSDL3_NewFrame();
-    // ImGui::NewFrame();
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+
+    show_debug_info();
+
+    //IMGUI stuff
     // ImGui::ShowDemoWindow(); // Show demo window! :)
 
     current_frame_time = SDL_GetTicksNS();
@@ -739,7 +780,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     // }
 
     assert(context.shaders.size() == 2);
-    assert(context.objects.size() == 1);
 
     //3d models
     for(auto& world_object : context.objects)
@@ -748,8 +788,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         object_shader.use();
         object_shader.set_mat4("model", world_object.model_matrix);
 
-        // object_shader.set_vec3("material.texture_specular", world_object.model..reflection);
-        // object_shader.set_vec3("material.texture_specular", material.reflection);
         object_shader.set_float("material.shininess", 32.0F);
 
         model_draw(world_object.model, object_shader);
@@ -773,8 +811,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     glBindVertexArray(0);
 
 
-    // ImGui::Render();
-    // ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     // SDL_RenderPresent(renderer);
     SDL_GL_SwapWindow(window);
@@ -788,9 +826,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 void SDL_AppQuit(void *appstate, SDL_AppResult res)
 {
-    // ImGui_ImplOpenGL3_Shutdown();
-    // ImGui_ImplSDL3_Shutdown();
-    // ImGui::DestroyContext();
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
 }
 
 

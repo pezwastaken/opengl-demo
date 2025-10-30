@@ -116,7 +116,6 @@ void mesh_setup(Mesh& mesh)
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2,3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
                           (void*)offsetof(Vertex, tex_coords));
-
 }
 
 
@@ -279,8 +278,10 @@ std::vector<Texture> load_material_textures(Model& model,
             }
             else
             {
+                std::string full_texture_path = model.directory + "/" + texture_path_c_str;
+                std::clog << "loading texture from full path: " << full_texture_path << "\n";
                 texture_loaded =
-                    load_texture_from_file(texture_path_c_str, texture.id, GL_TEXTURE_2D);
+                    load_texture_from_file(full_texture_path.c_str(), texture.id, GL_TEXTURE_2D);
             }
 
             if(!texture_loaded)

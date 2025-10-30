@@ -86,28 +86,33 @@ vec3 computeDirectionalLight(vec3 viewDir, vec3 normal)
 	return ambient + diffuse + reflection;
 }
 
-// vec3 computePointLight(int lightId, vec3 viewDir, vec3 normal)
-// {
-// 	PointLight pointLight = pointLights[lightId];
-//
-// 	vec3 lightDirection = normalize(pointLight.position - fragPos);
-//
-// 	float diff = max(dot(normal, lightDirection), 0.0F);
-//
-// 	vec3 reflectDir = reflect(lightDirection, normal);
-// 	float spec = pow(max(dot(reflectDir, viewDir), 0.0F), material.shininess);
-//
-// 	float distance = length(fragPos - pointLight.position);
-// 	float attenuation = 1.0 /
-// 		(pointLight.constant + pointLight.linear * distance +
-// 		pointLight.quadratic * distance * distance);
-//
-// 	vec3 ambient = pointLight.ambient * vec3(texture(material.texture_diffuse, texCoords));
-// 	vec3 diffuse = pointLight.diffuse * diff * vec3(texture(material.texture_diffuse, texCoords));
-// 	vec3 reflection = pointLight.reflection * spec * vec3(texture(material.texture_specular, texCoords));
-//
-// 	return attenuation * (ambient + diffuse + reflection);
-// }
+vec3 computePointLight(int lightId, vec3 viewDir, vec3 normal)
+{
+	PointLight pointLight = pointLights[lightId];
+
+	vec3 lightDirection = normalize(pointLight.position - fragPos);
+
+	float diff = max(dot(normal, lightDirection), 0.0F);
+
+	vec3 reflectDir = reflect(lightDirection, normal);
+	float spec = pow(max(dot(reflectDir, viewDir), 0.0F), material.shininess);
+
+	float distance = length(fragPos - pointLight.position);
+	float attenuation = 1.0 /
+		(pointLight.constant + pointLight.linear * distance +
+		pointLight.quadratic * distance * distance);
+
+	vec3 ambient =
+		pointLight.ambient * vec3(texture(material.texture_diffuse0, texCoords));
+
+	vec3 diffuse =
+		pointLight.diffuse * diff * vec3(texture(material.texture_diffuse0, texCoords));
+
+	vec3 reflection =
+		pointLight.reflection * spec * vec3(texture(material.texture_specular0, texCoords));
+
+	return attenuation * (ambient + diffuse + reflection);
+}
 
 // vec3 computeSpotLight(vec3 viewDir, vec3 normal)
 // {
@@ -145,10 +150,10 @@ void main()
 
 	vec3 result = computeDirectionalLight(viewDir, norm);
 
-	// for(int i = 0; i < nPointLights; i++)
-	// {
-	// 	result += computePointLight(i, viewDir, norm);
-	// }
+	for(int i = 0; i < nPointLights; i++)
+	{
+		result += computePointLight(i, viewDir, norm);
+	}
 
 	// result += computeSpotLight(viewDir, norm);
 	FragColor = vec4(result, 1.0F);
