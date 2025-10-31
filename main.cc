@@ -66,6 +66,8 @@ static constexpr float border_color[] = {
     1.0F, 1.0F, 1.0F
 };
 
+static u32 current_window_width = BUFFER_WIDTH;
+static u32 current_window_height = BUFFER_HEIGHT;
 
 static glm::mat4 view(1.0F);
 static glm::mat4 projection;
@@ -660,6 +662,9 @@ SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
             int w = event->window.data1;
             int h = event->window.data2;
 
+            current_window_width = w;
+            current_window_height = h;
+
             glViewport(0, 0, w, h);
             std::clog << "gl viewport resized to: " << w << " , " << h << std::endl;
             break;
@@ -678,16 +683,12 @@ SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         {
-            std::clog << "mouse click at: " << key_handler.mouse_position.x << ", "
-                    << key_handler.mouse_position.y << std::endl;
-
             key_handler.left_click = true;
             break;
         }
 
         case SDL_EVENT_MOUSE_BUTTON_UP:
         {
-            std::clog << "mouse click up" << std::endl;
             key_handler.left_click = false;
             break;
         }
@@ -874,18 +875,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
     }
 
-    //TODO: handle resizing. Also the off screen one is not working :)
-    if(key_handler.left_click)
-    {
-        unsigned char pixel[3];
-        glReadPixels(key_handler.mouse_position.x,
-                     //FIXME: BUFFER_HEIGHT is wrong. It should use the current buffer height (depending on resize)
-                     BUFFER_HEIGHT - key_handler.mouse_position.y,
-                     1, 1,
-                     GL_RGB, GL_UNSIGNED_BYTE, pixel);
-        std::clog << "pixel color: " << (u32)pixel[0] << ", " << (u32)pixel[1] << ", "
-            << (u32)pixel[2] << std::endl;
-    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -894,33 +883,38 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     SDL_GL_SwapWindow(window);
 
 
-    //offscreen render with color pick buffer
+
+    //offscreen render with color pick buffer to know which object has been clicked
     //
-    glBindBuffer(GL_FRAMEBUFFER, color_pick_frame_buffer);
-    glClearColor(0.0, 0.0, 0.0, 1.0);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    Shader& color_pick_shader = context.shaders[0];
-    color_pick_shader.use();
-
-    for(auto& world_object : context.objects)
+    if(key_handler.left_click)
     {
-        color_pick_shader.set_vec3("color", world_object.model.unique_color);
-        color_pick_shader.set_mat4("model", world_object.model_matrix);
-        model_draw_color_pick(world_object.model);
-    }
+        glBindBuffer(GL_FRAMEBUFFER, color_pick_frame_buffer);
+        glClearColor(0.0, 0.0, 0.0, 1.0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // if(key_handler.left_click)
-    // {
-    //     std::clog << "checking pixel color" << std::endl;
-    //     unsigned char pixel[3];
-    //     glReadPixels(10,
-    //                  10,
-    //                  1, 1,
-    //                  GL_RGB, GL_UNSIGNED_BYTE, pixel);
-    //     std::clog << "pixel color: " << pixel[0] << ", " << pixel[1] << ", "
-    //         << pixel[2] << std::endl;
-    // }
+        Shader& color_pick_shader = context.shaders[0];
+        color_pick_shader.use();
+
+        for(auto& world_object : context.objects)
+        {
+            color_pick_shader.set_vec3("color", world_object.model.unique_color);
+            color_pick_shader.set_mat4("model", world_object.model_matrix);
+            model_draw_color_pick(world_object.model);
+        }
+
+        unsigned char pixel[3];
+        glReadPixels(key_handler.mouse_position.x,
+                     current_window_height - key_handler.mouse_position.y,
+                     1, 1,
+                     GL_RGB, GL_UNSIGNED_BYTE, pixel);
+        // std::clog << "pixel color: " << (u32)pixel[0] << ", " << (u32)pixel[1] << ", "
+        //     << (u32)pixel[2] << std::endl;
+
+        u32 picked_color = color_rgb_bytes_to_u32(pixel);
+        u32 world_object_idx = color_pick_map[picked_color];
+
+        const WorldObject& clicked_object = context.objects[world_object_idx];
+    }
 
 
 

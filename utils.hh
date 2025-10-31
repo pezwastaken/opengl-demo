@@ -172,7 +172,14 @@ inline u32 color_vec3_to_u32(glm::vec3 color)
     u32 green = color.y * 255U;
     u32 blue = color.z * 255U;
 
-    return (blue + (green << 8) + (red << 16));
+    return (blue | (green << 8) | (red << 16));
 }
 
+inline u32 color_rgb_bytes_to_u32(unsigned char pixel[3])
+{
+    u32 red = pixel[0];
+    u32 green = pixel[1];
+    u32 blue = pixel[2];
+    return (red << 16) | (green << 8) | (blue);
+}
 
