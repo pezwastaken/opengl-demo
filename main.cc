@@ -138,6 +138,9 @@ struct WorldObject
 
     Model model;
 
+    //for color picking
+    glm::vec3 unique_color;
+
     u32 vao;
     u32 shader;
     u32 material_id;
@@ -183,6 +186,25 @@ inline void push_floats(std::vector<float>& v, const glm::vec2& x)
     v.push_back(x.x);
     v.push_back(x.y);
 }
+
+
+static u32 unique_model_color_counter = 1;
+
+void world_object_assign_color(WorldObject& world_object)
+{
+    //assing unique color
+    float red = (unique_model_color_counter & RED_MASK) / 255.0F;
+    float green = (unique_model_color_counter & GREEN_MASK) / 255.0F;
+    float blue = (unique_model_color_counter & BLUE_MASK) / 255.0F;
+
+    world_object.unique_color = glm::vec3(red, green, blue);
+    ++unique_model_color_counter;
+
+    std::clog << "loaded model has [" << world_object.unique_color.x
+        << ", " << world_object.unique_color.y << ", " << world_object.unique_color.z
+        << "] as unique color" << std::endl;
+}
+
 
 void gen_color_pick_frame_buffer()
 {
@@ -314,6 +336,8 @@ void create_light_source_data(u32 light_source_shader_id)
     {
         WorldObject light_source =
             gen_random_cube(origin, 1.0F, light_source_shader_id, light_vao);
+
+        // world_object_assign_color(light_source);
 
         auto sample_color = colors[i];
 
@@ -533,6 +557,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     light_source_shader.set_vec3("lightColor", glm::vec3(1,1,1));
     light_source_shader.set_mat4("projection", projection);
     context.shaders.push_back(light_source_shader);
+
     create_light_source_data(context.shaders.size() - 1);
     create_directional_light_source(context.shaders.size() - 1);
 
@@ -588,11 +613,18 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     sword.model = model1;
     sword.shader = context.shaders.size() - 1;
 
+    world_object_assign_color(sword);
     context.objects.push_back(sword);
 
-    const u32 model1_color_id = color_vec3_to_u32(sword.model.unique_color);
+
+            std::clog << "sword object has color: " << sword.unique_color.x
+                << ", " << sword.unique_color.y << ", " << sword.unique_color.z
+                << "\n";
+
+    const u32 model1_color_id = color_vec3_to_u32(sword.unique_color);
+
     std::clog << "model 1 color id: " << model1_color_id << std::endl;
-    //TODO: this map is pretty useless, it could be a direct map with no in between
+    //TODO this map is pretty useless, it could be a direct map with no in between
     color_pick_map[model1_color_id] = context.objects.size() - 1;
 
 
@@ -608,11 +640,13 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     road.model = env_model;
     road.shader = context.shaders.size() - 1;
 
+    world_object_assign_color(road);
     context.objects.push_back(road);
 
-    const u32 model2_color_id = color_vec3_to_u32(road.model.unique_color);
+    const u32 model2_color_id = color_vec3_to_u32(road.unique_color);
+
     std::clog << "model 2 color id: " << model2_color_id << std::endl;
-    //TODO: this map is pretty useless, it could be a direct map with no in between
+    //TODO this map is pretty useless, it could be a direct map with no in between
     color_pick_map[model2_color_id] = context.objects.size() - 1;
 
 
@@ -829,27 +863,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     context.shaders[2].use();
 
     context.shaders[2].set_vec3("viewPosition", camera.position);
-
     context.shaders[2].set_vec3("spotLight.position", camera.position);
     context.shaders[2].set_vec3("spotLight.direction", camera.front);
-
-    //render objects
-    // for(auto& world_object : context.objects)
-    // {
-    //     Shader& object_shader = context.shaders[world_object.shader];
-    //     object_shader.use();
-    //     object_shader.set_mat4("model", world_object.model_matrix);
-    //
-    //     if (object_shader.has_uniform("material.shininess"))
-    //     {
-    //         const auto& material = context.materials[world_object.material_id];
-    //         object_shader.set_vec3("material.texture_specular", material.reflection);
-    //         object_shader.set_float("material.shininess", material.shininess);
-    //     }
-    //
-    //     glBindVertexArray(world_object.vao);
-    //     glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
-    // }
 
     //3d models
     for(auto& world_object : context.objects)
@@ -883,7 +898,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     SDL_GL_SwapWindow(window);
 
 
-
     //offscreen render with color pick buffer to know which object has been clicked
     //
     if(key_handler.left_click)
@@ -897,25 +911,48 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
         for(auto& world_object : context.objects)
         {
-            color_pick_shader.set_vec3("color", world_object.model.unique_color);
+            color_pick_shader.set_vec3("color", world_object.unique_color);
             color_pick_shader.set_mat4("model", world_object.model_matrix);
             model_draw_color_pick(world_object.model);
         }
+
+        // FIXME: having them separated (two different vectors) I can't know which
+        // vector the index is referring to.
+        //
+        // for(auto& light_world_object : context.light_emitting_objects)
+        // {
+        //     color_pick_shader.set_vec3("color", light_world_object.unique_color);
+        //     color_pick_shader.set_mat4("model", light_world_object.model_matrix);
+        //
+        //     glBindVertexArray(light_world_object.vao);
+        //     glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
+        // }
 
         unsigned char pixel[3];
         glReadPixels(key_handler.mouse_position.x,
                      current_window_height - key_handler.mouse_position.y,
                      1, 1,
                      GL_RGB, GL_UNSIGNED_BYTE, pixel);
-        // std::clog << "pixel color: " << (u32)pixel[0] << ", " << (u32)pixel[1] << ", "
-        //     << (u32)pixel[2] << std::endl;
+
+        std::clog << "pixel color: " << (u32)pixel[0] << ", " << (u32)pixel[1] << ", "
+            << (u32)pixel[2] << std::endl;
 
         u32 picked_color = color_rgb_bytes_to_u32(pixel);
-        u32 world_object_idx = color_pick_map[picked_color];
+        if(picked_color > 0)
+        {
+            u32 world_object_idx = color_pick_map[picked_color];
 
-        const WorldObject& clicked_object = context.objects[world_object_idx];
+            std::clog << "clicked on object at idx: " << world_object_idx << "\n";
+
+            const WorldObject& clicked_object = context.objects[world_object_idx];
+        }
+        else
+        {
+            std::clog << "clicked on nothing\n";
+        }
+
+        key_handler.left_click = false;
     }
-
 
 
     glBindBuffer(GL_FRAMEBUFFER, 0);

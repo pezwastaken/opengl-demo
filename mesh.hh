@@ -51,8 +51,6 @@ struct Model
     std::string directory;
 
     std::map<std::string, Texture> loaded_textures;
-
-    glm::vec3 unique_color;
 };
 
 void model_init(Model& model, const std::string& path);

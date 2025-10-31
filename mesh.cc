@@ -351,7 +351,6 @@ void model_draw_color_pick(const Model& model)
     }
 }
 
-static u32 unique_model_color_counter = 1;
 
 void model_init(Model& model, const std::string& path)
 {
@@ -373,17 +372,6 @@ void model_init(Model& model, const std::string& path)
 
     model_process_node(model, scene->mRootNode, *scene);
 
-    //assing unique color
-    float red = (unique_model_color_counter & RED_MASK) / 255.0F;
-    float green = (unique_model_color_counter & GREEN_MASK) / 255.0F;
-    float blue = (unique_model_color_counter & BLUE_MASK) / 255.0F;
-
-    model.unique_color = glm::vec3(red, green, blue);
-    ++unique_model_color_counter;
-
-    std::clog << "loaded model has [" << model.unique_color.x
-        << ", " << model.unique_color.y << ", " << model.unique_color.z
-        << "] as unique color" << std::endl;
     std::clog << "loaded model has " << model.meshes.size() << " meshes" << std::endl;
     std::clog << "loaded model has " << model.loaded_textures.size() << " textures"
         " (excluding default ones)" << std::endl;
