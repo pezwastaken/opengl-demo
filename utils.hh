@@ -68,6 +68,7 @@ static constexpr float cube_vertices[] = {
 };
 
 
+
 inline void gen_texture(u32& texture, int texture_kind, unsigned char* data,
                         int width, int height, int n_channels)
 {

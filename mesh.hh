@@ -4,7 +4,6 @@
 #include "utils.hh"
 #include <glm/ext/vector_float3.hpp>
 #include <glm/ext/vector_float2.hpp>
-#include <map>
 #include <vector>
 
 struct Vertex
@@ -28,11 +27,21 @@ struct Texture
 
 };
 
+
+
+//TODO: use this instead of a plain vector of textures in the Mesh struct
+struct Material
+{
+    std::vector<Texture> textures;
+};
+
 struct Mesh
 {
     std::vector<Vertex> vertices;
     std::vector<u32> indices;
-    std::vector<Texture> textures;
+
+    Material material;
+    // std::vector<Texture> textures;
 
     u32 vao;
     u32 vbo;
@@ -41,7 +50,7 @@ struct Mesh
 };
 
 void mesh_init(Mesh& mesh, std::vector<Vertex> v, std::vector<u32> i,
-               std::vector<Texture> t);
+               Material m);
 
 void mesh_draw(const Mesh& mesh);
 
@@ -50,13 +59,17 @@ struct Model
     std::vector<Mesh> meshes;
     std::string directory;
 
-    std::map<std::string, Texture> loaded_textures;
+    std::unordered_map<std::string, Texture> loaded_textures;
 };
 
 void model_init(Model& model, const std::string& path);
 void model_draw(const Model& model, Shader& shader);
 void model_draw_color_pick(const Model& model);
 
+void model_init_primitive_cube(Model& model, const std::vector<Texture>& textures);
+
 void load_default_textures();
+const Texture& get_default_diffuse_texture();
+const Texture& get_default_specular_texture();
 
 

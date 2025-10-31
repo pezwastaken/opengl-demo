@@ -101,14 +101,6 @@ static KeyHandler key_handler {0};
 static u64 current_frame_time = 0;
 static u64 previous_frame_time = 0;
 
-struct Material
-{
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec3 reflection;
-	float shininess;
-};
-
 
 // mainly used by point lights.
 // direction could be used by spot lights. Same thing goes for cut off.
@@ -454,40 +446,6 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     srand(time(nullptr));
 
 
-
-    //create VBO buffer
-    u32 VBO;
-    glGenBuffers(1, &VBO);
-
-    //VAO stuff
-    u32 VAO;
-    glGenVertexArrays(1, &VAO);
-
-    glBindVertexArray(VAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cube_vertices), cube_vertices,
-                 GL_STATIC_DRAW);
-
-    std::clog << "size of cube_vertices: " << N_CUBE_VERTICES << std::endl;
-
-    //vertices
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    //normal vectors
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    //texture coordinates
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-
-
-    context.vbos.push_back(VBO);
-    context.vaos.push_back(VAO);
-
-
     //flip the images vertically on load
     stbi_set_flip_vertically_on_load(true);
 
@@ -497,30 +455,10 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     //
     load_default_textures();
 
-    //
-    // //diffuse map
-    // // u32 texture2;
-    // texture_loaded = load_texture("textures/container2.png", texture2, GL_TEXTURE_2D);
-    // if (!texture_loaded)
-    // {
-    //     return SDL_APP_FAILURE;
-    // }
-    // glActiveTexture(GL_TEXTURE1);
-    // glBindTexture(GL_TEXTURE_2D, texture2);
-    //
-    // //specular map
-    // // u32 texture3;
-    // texture_loaded = load_texture("textures/container2_specular.png", texture3, GL_TEXTURE_2D);
-    // if (!texture_loaded)
-    // {
-    //     return SDL_APP_FAILURE;
-    // }
-    // glActiveTexture(GL_TEXTURE2);
-    // glBindTexture(GL_TEXTURE_2D, texture3);
-
-
-    //bind the correct VAO (suppose multiple objects)
-    glBindVertexArray(VAO);
+    Model default_cube_model;
+    model_init_primitive_cube(default_cube_model,
+                              {get_default_diffuse_texture(),
+                              get_default_specular_texture()});
 
 
     projection = glm::perspective(glm::radians(45.0F), 600.0F / 400.0F, 0.1F, 100.0F);
@@ -543,12 +481,6 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     color_pick_shader.set_mat4("projection", projection);
     context.shaders.push_back(color_pick_shader);
 
-
-    //push default material
-    Material material {.ambient = {1.0, 0.5, 0.31}, .diffuse = {1.0, 0.5, 0.31},
-                       .reflection = {0.5, 0.5, 0.5}, .shininess = 32.0F};
-
-    context.materials.push_back(material);
 
     //shader used to render light sources
     Shader light_source_shader = Shader("shaders/light_source_vertex.glsl",
@@ -648,6 +580,26 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     std::clog << "model 2 color id: " << model2_color_id << std::endl;
     //TODO this map is pretty useless, it could be a direct map with no in between
     color_pick_map[model2_color_id] = context.objects.size() - 1;
+
+
+    //cube model
+    WorldObject cube1;
+    cube1.model_matrix = glm::mat4(1.0F);
+    cube1.model_matrix = glm::translate(cube1.model_matrix, glm::vec3(-2,3,1));
+    cube1.model_matrix = glm::scale(cube1.model_matrix, glm::vec3(2));
+
+    cube1.model = default_cube_model;
+    cube1.shader = context.shaders.size() - 1;
+
+    world_object_assign_color(cube1);
+    context.objects.push_back(cube1);
+
+    const u32 model3_color_id = color_vec3_to_u32(cube1.unique_color);
+
+    std::clog << "model 3 color id: " << model3_color_id << std::endl;
+    color_pick_map[model3_color_id] = context.objects.size() - 1;
+
+
 
 
     light_shader.use();
@@ -792,10 +744,6 @@ void update_camera(u64 delta_time)
 
     view = glm::mat4(1.0F);
 
-    // float time = (SDL_GetTicks() / 500.0F);
-    // float cam_x = glm::sin(time) * radius;
-    // float cam_z = glm::cos(time) * radius;
-
     view = glm::lookAt(camera.position, camera.position + camera.front, camera.up);
 
     for (auto& shader : context.shaders)
@@ -816,7 +764,7 @@ void update_camera(u64 delta_time)
 
 }
 
-void show_debug_info()
+void imgui_show_debug_info()
 {
     // Transparent background
     ImGui::SetNextWindowBgAlpha(0.35f);
@@ -828,7 +776,6 @@ void show_debug_info()
 
     if (ImGui::Begin("Debug overlay", NULL, window_flags))
     {
-        // IMGUI_DEMO_MARKER("Examples/Simple Overlay");
         ImGui::Text("Debug info\n");
         ImGui::Separator();
         ImGui::Text("Camera position: (%.1f, %.1f, %.1f)",
@@ -846,10 +793,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    show_debug_info();
-
-    //IMGUI stuff
-    // ImGui::ShowDemoWindow(); // Show demo window! :)
+    imgui_show_debug_info();
 
     current_frame_time = SDL_GetTicksNS();
     u64 delta_time = current_frame_time - previous_frame_time;

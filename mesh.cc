@@ -31,14 +31,24 @@ void load_default_textures()
     std::clog << "loaded default textures\n";
 }
 
+const Texture& get_default_diffuse_texture()
+{
+    return default_pink_diffuse_map;
+}
+
+const Texture& get_default_specular_texture()
+{
+    return default_specular_map;
+}
+
 void mesh_setup(Mesh& mesh);
 
 void mesh_init(Mesh& mesh, std::vector<Vertex> v, std::vector<u32> i,
-               std::vector<Texture> t)
+               Material m)
 {
     mesh.vertices = v;
     mesh.indices = i;
-    mesh.textures = t;
+    mesh.material = m;
 
     mesh_setup(mesh);
 }
@@ -48,12 +58,12 @@ void mesh_draw(const Mesh& mesh, Shader& shader)
     u32 i_diffuse = 0;
     u32 i_specular = 0;
 
-    assert(mesh.textures.size() > 0);
+    assert(mesh.material.textures.size() > 0);
 
     // std::clog << "drawing mesh with " << mesh.textures.size() << " textures" << std::endl;
-    for(u32 i = 0; i < mesh.textures.size(); ++i)
+    for(u32 i = 0; i < mesh.material.textures.size(); ++i)
     {
-        const auto& texture = mesh.textures[i];
+        const auto& texture = mesh.material.textures[i];
 
         // std::clog << "using texture path: " << texture.path << std::endl;
 
@@ -237,7 +247,8 @@ Mesh mesh_from_assimp_mesh(Model& model, aiMesh* mesh, const aiScene& scene)
     assert(textures.size() >= 2);
 
     Mesh converted_mesh;
-    mesh_init(converted_mesh, vertices, indices, textures);
+    Material mesh_material {.textures = textures};
+    mesh_init(converted_mesh, vertices, indices, mesh_material);
 
     return converted_mesh;
 }
@@ -376,5 +387,72 @@ void model_init(Model& model, const std::string& path)
     std::clog << "loaded model has " << model.loaded_textures.size() << " textures"
         " (excluding default ones)" << std::endl;
 
+}
+
+
+void model_init_primitive_cube(Model& model, const std::vector<Texture>& textures)
+{
+    std::vector<Vertex> vertices
+    {
+        {{-0.5f, -0.5f, -0.5f},  {0.0f,  0.0f, -1.0f},  {0.0f, 0.0f}},
+        {{0.5f, -0.5f, -0.5f},  {0.0f,  0.0f, -1.0f},  {1.0f, 0.0f}},
+        {{0.5f,  0.5f, -0.5f},  {0.0f,  0.0f, -1.0f},  {1.0f, 1.0f}},
+        {{0.5f,  0.5f, -0.5f},  {0.0f,  0.0f, -1.0f},  {1.0f, 1.0f}},
+        {{-0.5f,  0.5f, -0.5f},  {0.0f,  0.0f, -1.0f},  {0.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f},  {0.0f,  0.0f, -1.0f},  {0.0f, 0.0f}},
+
+        {{-0.5f, -0.5f,  0.5f},  {0.0f,  0.0f, 1.0f},  { 0.0f, 0.0f}},
+        {{0.5f, -0.5f,  0.5f},  {0.0f,  0.0f, 1.0f},  { 1.0f, 0.0f}},
+        {{0.5f,  0.5f,  0.5f},  {0.0f,  0.0f, 1.0f},  { 1.0f, 1.0f}},
+        {{0.5f,  0.5f,  0.5f},  {0.0f,  0.0f, 1.0f},  { 1.0f, 1.0f}},
+        {{-0.5f,  0.5f,  0.5f},  {0.0f,  0.0f, 1.0f},  { 0.0f, 1.0f}},
+        {{-0.5f, -0.5f,  0.5f},  {0.0f,  0.0f, 1.0f},  { 0.0f, 0.0f}},
+
+        {{-0.5f,  0.5f,  0.5f}, {-1.0f,  0.0f,  0.0f},  {1.0f, 0.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {-1.0f,  0.0f,  0.0f},  {1.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {-1.0f,  0.0f,  0.0f},  {0.0f, 1.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {-1.0f,  0.0f,  0.0f},  {0.0f, 1.0f}},
+        {{-0.5f, -0.5f,  0.5f}, {-1.0f,  0.0f,  0.0f},  {0.0f, 0.0f}},
+        {{-0.5f,  0.5f,  0.5f}, {-1.0f,  0.0f,  0.0f},  {1.0f, 0.0f}},
+
+        {{0.5f,  0.5f,  0.5f},  {1.0f,  0.0f,  0.0f},  {1.0f, 0.0f}},
+        {{0.5f,  0.5f, -0.5f},  {1.0f,  0.0f,  0.0f},  {1.0f, 1.0f}},
+        {{0.5f, -0.5f, -0.5f},  {1.0f,  0.0f,  0.0f},  {0.0f, 1.0f}},
+        {{0.5f, -0.5f, -0.5f},  {1.0f,  0.0f,  0.0f},  {0.0f, 1.0f}},
+        {{0.5f, -0.5f,  0.5f},  {1.0f,  0.0f,  0.0f},  {0.0f, 0.0f}},
+        {{0.5f,  0.5f,  0.5f},  {1.0f,  0.0f,  0.0f},  {1.0f, 0.0f}},
+
+        {{-0.5f, -0.5f, -0.5f},  {0.0f, -1.0f,  0.0f},  {0.0f, 1.0f}},
+        {{0.5f, -0.5f, -0.5f},  {0.0f, -1.0f,  0.0f},  {1.0f, 1.0f}},
+        {{0.5f, -0.5f,  0.5f},  {0.0f, -1.0f,  0.0f},  {1.0f, 0.0f}},
+        {{0.5f, -0.5f,  0.5f},  {0.0f, -1.0f,  0.0f},  {1.0f, 0.0f}},
+        {{-0.5f, -0.5f,  0.5f},  {0.0f, -1.0f,  0.0f},  {0.0f, 0.0f}},
+        {{-0.5f, -0.5f, -0.5f},  {0.0f, -1.0f,  0.0f},  {0.0f, 1.0f}},
+
+        {{-0.5f,  0.5f, -0.5f},  {0.0f,  1.0f,  0.0f},  {0.0f, 1.0f}},
+        {{0.5f,  0.5f, -0.5f},  {0.0f,  1.0f,  0.0f},  {1.0f, 1.0f}},
+        {{0.5f,  0.5f,  0.5f},  {0.0f,  1.0f,  0.0f},  {1.0f, 0.0f}},
+        {{0.5f,  0.5f,  0.5f},  {0.0f,  1.0f,  0.0f},  {1.0f, 0.0f}},
+        {{-0.5f,  0.5f,  0.5f},  {0.0f,  1.0f,  0.0f},  {0.0f, 0.0f}},
+        {{-0.5f,  0.5f, -0.5f},  {0.0f,  1.0f,  0.0f},  {0.0f, 1.0f}}
+    };
+
+    const u32 n = 36;
+    std::vector<u32> indices;
+    indices.reserve(n);
+    for(u32 i = 0; i < n; ++i)
+    {
+        indices.push_back(i);
+    }
+
+    Mesh cube_mesh {.vertices = vertices, .indices = indices};
+    mesh_setup(cube_mesh);
+
+    Material material {.textures = textures};
+    cube_mesh.material = material;
+
+    model.meshes = {cube_mesh};
+    model.directory = "";
+    model.loaded_textures = {};
 }
 
