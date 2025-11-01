@@ -40,6 +40,8 @@
 #include "key_handler.hh"
 #include "shader.hh"
 #include "mesh.hh"
+#include "inspector.hh"
+#include "world_object.hh"
 
 static SDL_Window* window = nullptr;
 static SDL_Renderer* renderer = nullptr;
@@ -102,42 +104,6 @@ static u64 current_frame_time = 0;
 static u64 previous_frame_time = 0;
 
 
-// mainly used by point lights.
-// direction could be used by spot lights. Same thing goes for cut off.
-struct LightData
-{
-    glm::vec3 direction;
-    glm::vec3 source_color;
-
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec3 reflection;
-
-    float constant;
-    float linear;
-    float quadratic;
-
-    float innerCutOff;
-    float outerCutOff;
-};
-
-struct WorldObject
-{
-    glm::mat4 model_matrix;
-    glm::vec3 position;
-
-    LightData light;
-
-    Model model;
-
-    //for color picking
-    glm::vec3 unique_color;
-
-    u32 vao;
-    u32 shader;
-    u32 material_id;
-};
-
 struct WorldData
 {
     std::vector<u32> vaos;
@@ -166,6 +132,8 @@ static u32 color_pick_texture;
 //maps a unique color (expressed as 24 bit number) to the corresponding object index
 //in the context.objects vector
 static u32 color_pick_map[MAX_ENTITIES];
+
+static Inspector inspector;
 
 inline void push_floats(std::vector<float>& v, const glm::vec3& x)
 {
@@ -233,13 +201,15 @@ WorldObject gen_terrain(u32 shader_id, u32 vao_id)
 {
     glm::mat4 model(1.0F);
 
-    const glm::vec3 position(0,-30,0);
+    const glm::vec3 position(0.0F,-30.0F,0.0F);
     model = glm::translate(model, position);
     float random_scale = 50.0F;
     model = glm::scale(model, glm::vec3(random_scale));
 
-    WorldObject random_cube {.model_matrix = model,
-        .position = position, .vao = vao_id, .shader = shader_id, .material_id = 0};
+    WorldObject random_cube {
+        .model_matrix = model,
+        .position = glm::vec4(position, 1.0F),
+        .vao = vao_id, .shader = shader_id, .material_id = 0};
 
     return random_cube;
 };
@@ -263,8 +233,10 @@ WorldObject gen_random_cube(glm::vec3 center, float side, u32 shader_id, u32 vao
     random_model = glm::scale(random_model, glm::vec3(random_scale));
 
     //FIXME: material id
-    WorldObject random_cube {.model_matrix = random_model,
-        .position = random_vec, .vao = vao_id, .shader = shader_id, .material_id = 0};
+    WorldObject random_cube {
+        .model_matrix = random_model,
+        .position = glm::vec4(random_vec, 1.0F),
+        .vao = vao_id, .shader = shader_id, .material_id = 0};
 
     return random_cube;
 }
@@ -460,6 +432,8 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
                               {get_default_diffuse_texture(),
                               get_default_specular_texture()});
 
+    inspector.hidden = true;
+    inspector.currently_inspecting_idx = 0;
 
     projection = glm::perspective(glm::radians(45.0F), 600.0F / 400.0F, 0.1F, 100.0F);
 
@@ -522,25 +496,16 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     context.shaders.push_back(light_shader);
 
-    // u32 n_cubes = 10;
-    // const glm::vec3 center = origin;
-    // const float side = 1;
-    // for (u32 i = 0; i < n_cubes; ++i)
-    // {
-    //     context.objects.push_back(gen_random_cube(center, side,
-    //                                               context.shaders.size() - 1, VAO));
-    // }
-
-    // context.objects.push_back(gen_terrain(context.shaders.size() - 1, VAO));
 
     // setup model 1
     Model model1;
     model_init(model1, "models/diao-chan/source/DiaoChann.glb");
 
     WorldObject sword;
-    sword.model_matrix = glm::mat4(1.0F);
-    sword.model_matrix = glm::translate(sword.model_matrix, glm::vec3(0,3,3));
-    sword.model_matrix = glm::scale(sword.model_matrix, glm::vec3(100));
+    sword.reset_transforms();
+    sword.position = glm::vec3(0,3,3);
+    sword.scale = glm::vec3(100);
+    sword.recompute_model_matrix();
 
     sword.model = model1;
     sword.shader = context.shaders.size() - 1;
@@ -548,10 +513,9 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     world_object_assign_color(sword);
     context.objects.push_back(sword);
 
-
-            std::clog << "sword object has color: " << sword.unique_color.x
-                << ", " << sword.unique_color.y << ", " << sword.unique_color.z
-                << "\n";
+            // std::clog << "sword object has color: " << sword.unique_color.x
+            //     << ", " << sword.unique_color.y << ", " << sword.unique_color.z
+            //     << "\n";
 
     const u32 model1_color_id = color_vec3_to_u32(sword.unique_color);
 
@@ -565,9 +529,10 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     Model env_model;
     model_init(env_model, "models/environment/scene.gltf");
     WorldObject road;
-    road.model_matrix = glm::mat4(1.0F);
-    road.model_matrix = glm::translate(road.model_matrix, glm::vec3(0,3,0));
-    road.model_matrix = glm::scale(road.model_matrix, glm::vec3(2));
+    road.reset_transforms();
+    road.set_position(glm::vec3(0,3,0));
+    road.set_scale(glm::vec3(2));
+    road.recompute_model_matrix();
 
     road.model = env_model;
     road.shader = context.shaders.size() - 1;
@@ -584,9 +549,10 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     //cube model
     WorldObject cube1;
-    cube1.model_matrix = glm::mat4(1.0F);
-    cube1.model_matrix = glm::translate(cube1.model_matrix, glm::vec3(-2,3,1));
-    cube1.model_matrix = glm::scale(cube1.model_matrix, glm::vec3(2));
+    cube1.reset_transforms();
+    cube1.set_position(glm::vec3(-2,3,1));
+    cube1.set_scale(glm::vec3(2));
+    cube1.recompute_model_matrix();
 
     cube1.model = default_cube_model;
     cube1.shader = context.shaders.size() - 1;
@@ -625,12 +591,21 @@ void camera_rotate(float delta_x, float delta_y)
 SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
 {
 
-    // ImGui_ImplSDL3_ProcessEvent(event);
-    // ImGuiIO& io = ImGui::GetIO();
+    ImGui_ImplSDL3_ProcessEvent(event);
+    ImGuiIO& io = ImGui::GetIO();
 
-    // if (io.WantCaptureMouse)
+    //the event is mouse related but imgui captured the mouse, skip the event
+    if (io.WantCaptureMouse && (event->type >= 0x400 && event->type < 0x600))
+    {
+        return SDL_APP_CONTINUE;
+    }
+
+    //not needed. Also this bugs the keyboard out making the camera move along the last
+    //direction before focusing the window, which is pretty annoying.
+    //
+    // if (io.WantCaptureKeyboard && (event->type >= 0x300 && event->type < 0x400))
     // {
-    //     std::clog << "want to capture mouse" << std::endl;
+    //
     //     return SDL_APP_CONTINUE;
     // }
 
@@ -681,7 +656,8 @@ SDL_AppResult SDL_AppEvent(void* app_state, SDL_Event* event)
 
         case SDL_EVENT_MOUSE_MOTION:
         {
-            //dragging mouse while holding left click rotates camera
+            //TODO: dragging mouse while holding left shift rotates camera
+            //
             auto delta_x = -event->motion.xrel * mouse_sens_multiplier;
             auto delta_y = -event->motion.yrel * mouse_sens_multiplier;
 
@@ -768,6 +744,7 @@ void imgui_show_debug_info()
 {
     // Transparent background
     ImGui::SetNextWindowBgAlpha(0.35f);
+    ImGui::SetNextWindowPos(ImVec2(current_window_width - 300, 0));
 
     ImGuiWindowFlags window_flags =
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize
@@ -787,6 +764,83 @@ void imgui_show_debug_info()
     ImGui::End();
 }
 
+void imgui_show_inspector_panel()
+{
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    ImGui::SetNextWindowPos(ImVec2(10.0F, 10.0F));
+
+    ImGuiWindowFlags window_flags =
+        ImGuiWindowFlags_AlwaysAutoResize
+        | ImGuiWindowFlags_NoSavedSettings;
+
+    if (ImGui::Begin("Inspector", NULL, window_flags))
+    {
+        assert(inspector.currently_inspecting_idx < context.objects.size());
+        ImGui::Text("Currently inspecting world object at index: %u",
+                    inspector.currently_inspecting_idx);
+        ImGui::Separator();
+
+        WorldObject& inspected_object =
+            context.objects[inspector.currently_inspecting_idx];
+
+        //read only stuff first
+        ImGui::Text("unique color pick: (%.2f, %.2f, %.2f)",
+                    inspected_object.unique_color.x,
+                    inspected_object.unique_color.y,
+                    inspected_object.unique_color.z);
+
+        ImGui::Separator();
+
+        const auto& model = inspected_object.model;
+        const auto& meshes = model.meshes;
+        const auto& model_directory = model.directory;
+        const auto& loaded_textures = model.loaded_textures;
+
+        ImGui::Text("Model directory: %s", model_directory.c_str());
+        ImGui::Text("Number of meshes: %lu", meshes.size());
+        ImGui::Text("Number of loaded textures: %lu", loaded_textures.size());
+
+        // positions and other properties that could be modified
+        ImGui::Separator();
+
+        ImGui::Text("World position: (%.2f, %.2f, %.2f)",
+                    inspected_object.position.x,
+                    inspected_object.position.y,
+                    inspected_object.position.z);
+
+        ImGui::SeparatorText("Edit object position");
+
+        ImGui::DragScalar("pos. x", ImGuiDataType_Float,
+                          &inspected_object.position.x, 0.005F, nullptr, nullptr, "%f");
+        ImGui::DragScalar("pos. y", ImGuiDataType_Float,
+                          &inspected_object.position.y, 0.005F, nullptr, nullptr, "%f");
+        ImGui::DragScalar("pos. z", ImGuiDataType_Float,
+                          &inspected_object.position.z, 0.005F, nullptr, nullptr, "%f");
+
+        //TODO: rotation
+
+        ImGui::SeparatorText("Edit object scale");
+
+        ImGui::DragScalar("scale x", ImGuiDataType_Float,
+                          &inspected_object.scale.x, 0.005F, nullptr, nullptr, "%f");
+        ImGui::DragScalar("scale y", ImGuiDataType_Float,
+                          &inspected_object.scale.y, 0.005F, nullptr, nullptr, "%f");
+        ImGui::DragScalar("scale z", ImGuiDataType_Float,
+                          &inspected_object.scale.z, 0.005F, nullptr, nullptr, "%f");
+
+    }
+    ImGui::End();
+
+}
+
+void recompute_model_matrices()
+{
+    for(auto& world_object : context.objects)
+    {
+        world_object.recompute_model_matrix();
+    }
+}
+
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
     ImGui_ImplOpenGL3_NewFrame();
@@ -794,6 +848,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     ImGui::NewFrame();
 
     imgui_show_debug_info();
+    if (!inspector.hidden)
+        imgui_show_inspector_panel();
 
     current_frame_time = SDL_GetTicksNS();
     u64 delta_time = current_frame_time - previous_frame_time;
@@ -803,6 +859,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     update_camera(delta_time);
+
+    //update model matrices to apply changes
+    recompute_model_matrices();
 
     context.shaders[2].use();
 
@@ -889,10 +948,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             std::clog << "clicked on object at idx: " << world_object_idx << "\n";
 
             const WorldObject& clicked_object = context.objects[world_object_idx];
+            inspector.hidden = false;
+            inspector.currently_inspecting_idx = world_object_idx;
         }
         else
         {
             std::clog << "clicked on nothing\n";
+            inspector.hidden = true;
         }
 
         key_handler.left_click = false;
