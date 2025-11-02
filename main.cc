@@ -432,8 +432,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
                               {get_default_diffuse_texture(),
                               get_default_specular_texture()});
 
-    inspector.hidden = true;
-    inspector.currently_inspecting_idx = 0;
+    inspector.reset();
 
     projection = glm::perspective(glm::radians(45.0F), 600.0F / 400.0F, 0.1F, 100.0F);
 
@@ -503,8 +502,9 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     WorldObject sword;
     sword.reset_transforms();
-    sword.position = glm::vec3(0,3,3);
-    sword.scale = glm::vec3(100);
+    sword.set_position(glm::vec3(0,3,3));
+    // sword.set_rotation(glm::vec3(0,0,90));
+    sword.set_scale(glm::vec3(100));
     sword.recompute_model_matrix();
 
     sword.model = model1;
@@ -811,22 +811,29 @@ void imgui_show_inspector_panel()
         ImGui::SeparatorText("Edit object position");
 
         ImGui::DragScalar("pos. x", ImGuiDataType_Float,
-                          &inspected_object.position.x, 0.005F, nullptr, nullptr, "%f");
+                          &inspected_object.position.x, 0.05F, nullptr, nullptr, "%f");
         ImGui::DragScalar("pos. y", ImGuiDataType_Float,
-                          &inspected_object.position.y, 0.005F, nullptr, nullptr, "%f");
+                          &inspected_object.position.y, 0.05F, nullptr, nullptr, "%f");
         ImGui::DragScalar("pos. z", ImGuiDataType_Float,
-                          &inspected_object.position.z, 0.005F, nullptr, nullptr, "%f");
+                          &inspected_object.position.z, 0.05F, nullptr, nullptr, "%f");
 
-        //TODO: rotation
+        ImGui::SeparatorText("Edit object rotation");
+
+        ImGui::DragScalar("rotation x", ImGuiDataType_Float,
+                          &inspected_object.rotation.rotation_wrt_default_axes.x, 1.0F, nullptr, nullptr, "%f");
+        ImGui::DragScalar("rotation y", ImGuiDataType_Float,
+                          &inspected_object.rotation.rotation_wrt_default_axes.y, 1.0F, nullptr, nullptr, "%f");
+        ImGui::DragScalar("rotation z", ImGuiDataType_Float,
+                          &inspected_object.rotation.rotation_wrt_default_axes.z, 1.0F, nullptr, nullptr, "%f");
 
         ImGui::SeparatorText("Edit object scale");
 
         ImGui::DragScalar("scale x", ImGuiDataType_Float,
-                          &inspected_object.scale.x, 0.005F, nullptr, nullptr, "%f");
+                          &inspected_object.scale.x, 0.1F, nullptr, nullptr, "%f");
         ImGui::DragScalar("scale y", ImGuiDataType_Float,
-                          &inspected_object.scale.y, 0.005F, nullptr, nullptr, "%f");
+                          &inspected_object.scale.y, 0.1F, nullptr, nullptr, "%f");
         ImGui::DragScalar("scale z", ImGuiDataType_Float,
-                          &inspected_object.scale.z, 0.005F, nullptr, nullptr, "%f");
+                          &inspected_object.scale.z, 0.1F, nullptr, nullptr, "%f");
 
     }
     ImGui::End();
@@ -870,13 +877,28 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     context.shaders[2].set_vec3("spotLight.direction", camera.front);
 
     //3d models
-    for(auto& world_object : context.objects)
+    // for(auto& world_object : context.objects)
+    for(u32 i = 0; i < context.objects.size(); ++i)
     {
+        auto& world_object = context.objects[i];
+
         Shader& object_shader = context.shaders[world_object.shader];
         object_shader.use();
         object_shader.set_mat4("model", world_object.model_matrix);
-
         object_shader.set_float("material.shininess", 32.0F);
+
+        //pulse selected object
+        if(inspector.currently_inspecting_idx == i)
+        {
+            u64 current_time_ms = SDL_GetTicks();
+            auto sin_time = (glm::sin(current_time_ms/400.0F) * 0.5) + 0.5;
+            float pulse_highlight = sin_time * 0.6F;
+            object_shader.set_float("pulseHighlight", pulse_highlight);
+        }
+        else
+        {
+            object_shader.set_float("pulseHighlight", 0.0F);
+        }
 
         model_draw(world_object.model, object_shader);
     }
@@ -954,7 +976,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         else
         {
             std::clog << "clicked on nothing\n";
-            inspector.hidden = true;
+            inspector.reset();
         }
 
         key_handler.left_click = false;

@@ -15,6 +15,8 @@ using u64 = uint64_t;
 #define TODO assert(false)
 #define UNREACHABLE assert(false)
 
+#define U32_MAX (((u32)0) - 1)
+
 #define MAX_ENTITIES 1000U
 
 #define BLUE_MASK 0xFF

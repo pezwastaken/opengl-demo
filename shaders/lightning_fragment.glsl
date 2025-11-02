@@ -66,6 +66,8 @@ uniform DirectionalLight directionalLight;
 uniform PointLight pointLights[MAX_POINT_LIGHTS];
 uniform int nPointLights;
 
+uniform float pulseHighlight;
+
 vec3 computeDirectionalLight(vec3 viewDir, vec3 normal)
 {
 	//TODO: dirLight.direction must be normalized
@@ -154,6 +156,9 @@ void main()
 	{
 		result += computePointLight(i, viewDir, norm);
 	}
+
+	const vec3 pinkHighlight = vec3(0.6, 0.6, 0.6);
+	result = mix(result, pinkHighlight, pulseHighlight);
 
 	// result += computeSpotLight(viewDir, norm);
 	FragColor = vec4(result, 1.0F);

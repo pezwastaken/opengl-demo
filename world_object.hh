@@ -1,8 +1,10 @@
 #pragma once
 
 #include "mesh.hh"
+#include <glm/common.hpp>
+#include <glm/ext/quaternion_trigonometric.hpp>
 #include <glm/ext/vector_float3.hpp>
-
+#include <glm/gtc/quaternion.hpp>
 
 // mainly used by point lights.
 struct LightData
@@ -22,13 +24,21 @@ struct LightData
     float outerCutOff;
 };
 
+struct Rotation
+{
+    glm::quat inner;
+    //works as a buffer to allow editing the rotation property without having
+    //to directly interact with quaternion representation
+    glm::vec3 rotation_wrt_default_axes;
+};
+
 struct WorldObject
 {
     glm::mat4 model_matrix;
 
     glm::vec3 position;
+    Rotation rotation;
     glm::vec3 scale;
-    glm::vec3 rotation;
 
     LightData light;
 
@@ -47,7 +57,11 @@ struct WorldObject
         model_matrix = glm::mat4(1.0F);
         position = glm::vec4(0.0F, 0.0F, 0.0F, 1.0F);
         scale = glm::vec3(1.0F);
-        rotation = glm::vec3(0.0F);
+        // rotation = glm::vec3(0.0F);
+        rotation = Rotation {
+            .inner = glm::quat(glm::vec3(0.0F)),
+            .rotation_wrt_default_axes = glm::vec3(0.0F)
+        };
     }
 
     void set_position(glm::vec3 t)
@@ -56,10 +70,16 @@ struct WorldObject
         position = glm::vec4(t, 1.0F);
     }
 
-    void set_rotation(float angle, glm::vec3 s)
+    //TODO: Double-check this part
+    //
+    //r is a vec3 that defines pitch,yaw,roll using degrees.
+    // A quaternion is built from this vector. The rotation quaternion is then
+    // applied to the model matrix.
+    void set_rotation(glm::vec3 r)
     {
-        model_matrix = glm::rotate(model_matrix, angle, s);
-        TODO;
+        rotation.rotation_wrt_default_axes = r;
+        rotation.inner = glm::quat(glm::radians(rotation.rotation_wrt_default_axes));
+        model_matrix = model_matrix * glm::mat4_cast(rotation.inner);
     }
 
     void set_scale(glm::vec3 s)
@@ -80,6 +100,9 @@ struct WorldObject
         //TODO: rotation. I think it should be a quaternion, not a vec3.
         //That way I can apply it directly. The debug window would use the usual vec3
         //representation by converting it to a glm::quat behind the scenes
+
+        glm::quat r = glm::quat(glm::radians(rotation.rotation_wrt_default_axes));
+        model_matrix = model_matrix * glm::mat4_cast(r);
         model_matrix = glm::scale(model_matrix, scale);
     }
 };
