@@ -97,9 +97,6 @@ struct WorldObject
     {
         model_matrix = glm::mat4(1.0F);
         model_matrix = glm::translate(model_matrix, position);
-        //TODO: rotation. I think it should be a quaternion, not a vec3.
-        //That way I can apply it directly. The debug window would use the usual vec3
-        //representation by converting it to a glm::quat behind the scenes
 
         glm::quat r = glm::quat(glm::radians(rotation.rotation_wrt_default_axes));
         model_matrix = model_matrix * glm::mat4_cast(r);

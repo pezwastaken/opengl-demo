@@ -111,6 +111,12 @@ struct Shader
                     value.x, value.y, value.z);
     }
 
+    void set_vec4(const std::string& name, glm::vec4 value)
+    {
+        glUniform4f(glGetUniformLocation(m_id, name.c_str()),
+                    value.x, value.y, value.z, value.w);
+    }
+
     void set_mat4(const std::string& name, const glm::mat4& value)
     {
         glUniformMatrix4fv(glGetUniformLocation(m_id, name.c_str()),

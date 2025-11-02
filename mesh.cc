@@ -60,34 +60,37 @@ void mesh_draw(const Mesh& mesh, Shader& shader)
 
     assert(mesh.material.textures.size() > 0);
 
-    // std::clog << "drawing mesh with " << mesh.textures.size() << " textures" << std::endl;
-    for(u32 i = 0; i < mesh.material.textures.size(); ++i)
+    //TODO: I don't like this. I should probably just have two functions
+    if(shader.has_uniform("material.texture_diffuse0"))
     {
-        const auto& texture = mesh.material.textures[i];
-
-        // std::clog << "using texture path: " << texture.path << std::endl;
-
-        assert(GL_TEXTURE0 + i <= GL_TEXTURE31);
-        glActiveTexture(GL_TEXTURE0 + i);
-
-        std::string uniform_name = "texture_";
-
-        switch (texture.kind)
+        for(u32 i = 0; i < mesh.material.textures.size(); ++i)
         {
-        case Texture::TEXTURE_DIFFUSE:
-            uniform_name += "diffuse" + std::to_string(i_diffuse++);
-            break;
-        case Texture::TEXTURE_SPECULAR:
-            uniform_name += "specular" + std::to_string(i_specular++);
-            break;
-        default:
-            std::cerr << "unexpected texture type" << std::endl;
-            UNREACHABLE;
-        }
+            const auto& texture = mesh.material.textures[i];
 
-        assert(shader.has_uniform(std::string("material." + uniform_name).c_str()));
-        shader.set_int(("material." + uniform_name).c_str(), i);
-        glBindTexture(GL_TEXTURE_2D, texture.id);
+            // std::clog << "using texture path: " << texture.path << std::endl;
+
+            assert(GL_TEXTURE0 + i <= GL_TEXTURE31);
+            glActiveTexture(GL_TEXTURE0 + i);
+
+            std::string uniform_name = "texture_";
+
+            switch (texture.kind)
+            {
+            case Texture::TEXTURE_DIFFUSE:
+                uniform_name += "diffuse" + std::to_string(i_diffuse++);
+                break;
+            case Texture::TEXTURE_SPECULAR:
+                uniform_name += "specular" + std::to_string(i_specular++);
+                break;
+            default:
+                std::cerr << "unexpected texture type" << std::endl;
+                UNREACHABLE;
+            }
+
+            assert(shader.has_uniform(std::string("material." + uniform_name).c_str()));
+            shader.set_int(("material." + uniform_name).c_str(), i);
+            glBindTexture(GL_TEXTURE_2D, texture.id);
+        }
     }
 
     glBindVertexArray(mesh.vao);
@@ -193,6 +196,7 @@ Mesh mesh_from_assimp_mesh(Model& model, aiMesh* mesh, const aiScene& scene)
     //The material index is a reference to the material contained in the scene object
     //
     u32 material_index = mesh->mMaterialIndex;
+    std::clog << "mesh material index: " << material_index << std::endl;
 
     assert(scene.mNumMaterials > material_index);
     assert(scene.mMaterials[material_index]);
@@ -219,13 +223,6 @@ Mesh mesh_from_assimp_mesh(Model& model, aiMesh* mesh, const aiScene& scene)
         std::clog << "loading default diffuse map" << std::endl;
         diffuse_maps.push_back(default_pink_diffuse_map);
     }
-
-
-
-    // std::clog << "\n mesh material diffuse count: " <<
-    //     material->GetTextureCount(aiTextureType_DIFFUSE);
-    // std::clog << "\n mesh material diffuse count: " <<
-    //     material->GetTextureCount(aiTextureType_DIFFUSE);
 
 
     std::vector<Texture> specular_maps =
@@ -322,8 +319,7 @@ std::vector<Texture> load_material_textures(Model& model,
 
 
 
-
-//model
+//model stuff
 
 void model_process_node(Model& model, aiNode* node, const aiScene& scene)
 {

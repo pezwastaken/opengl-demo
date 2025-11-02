@@ -40,8 +40,8 @@
 #include "key_handler.hh"
 #include "shader.hh"
 #include "mesh.hh"
-#include "inspector.hh"
 #include "world_object.hh"
+#include "scene_editor.hh"
 
 static SDL_Window* window = nullptr;
 static SDL_Renderer* renderer = nullptr;
@@ -133,7 +133,7 @@ static u32 color_pick_texture;
 //in the context.objects vector
 static u32 color_pick_map[MAX_ENTITIES];
 
-static Inspector inspector;
+static SceneEditor scene_editor_ui;
 
 inline void push_floats(std::vector<float>& v, const glm::vec3& x)
 {
@@ -374,12 +374,46 @@ void imgui_init()
     // Setup Platform/Renderer backends
     ImGui_ImplSDL3_InitForOpenGL(window, NULL);
     ImGui_ImplOpenGL3_Init();
-
 }
 
-static u32 texture1;
-static u32 texture2;
-static u32 texture3;
+void editor_objects_init()
+{
+    Model axis_arrow_model;
+    model_init(axis_arrow_model, "models/editor-models/axis_arrow.glb");
+
+    //x axis
+    glm::mat4 model_matrix (1.0F);
+    model_matrix = glm::translate(model_matrix, glm::vec3(0,4, 5));
+    model_matrix = glm::rotate(model_matrix, glm::radians(90.0F), glm::vec3(0,0,-1));
+    Axis x_axis_arrow {
+        .model_matrix = model_matrix,
+        .model = axis_arrow_model,
+        .color = glm::vec3(0.9, 0.3, 0.3)
+    };
+    scene_editor_ui.x_axis_cue = x_axis_arrow;
+
+    //y axis
+    model_matrix = glm::mat4(1.0F);
+    model_matrix = glm::translate(model_matrix, glm::vec3(0,4, 5));
+    Axis y_axis_arrow {
+        .model_matrix = model_matrix,
+        .model = axis_arrow_model,
+        .color = glm::vec3(0.3, 0.9, 0.3)
+    };
+    scene_editor_ui.y_axis_cue = y_axis_arrow;
+
+    //z axis
+    model_matrix = glm::mat4(1.0F);
+    model_matrix = glm::translate(model_matrix, glm::vec3(0,4, 5));
+    model_matrix = glm::rotate(model_matrix, glm::radians(90.0F), glm::vec3(1,0,0));
+    Axis z_axis_arrow {
+        .model_matrix = model_matrix,
+        .model = axis_arrow_model,
+        .color = glm::vec3(0.3, 0.3, 0.9)
+    };
+    scene_editor_ui.z_axis_cue = z_axis_arrow;
+}
+
 
 SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 {
@@ -432,7 +466,8 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
                               {get_default_diffuse_texture(),
                               get_default_specular_texture()});
 
-    inspector.reset();
+    scene_editor_ui.inspector.reset();
+    editor_objects_init();
 
     projection = glm::perspective(glm::radians(45.0F), 600.0F / 400.0F, 0.1F, 100.0F);
 
@@ -444,6 +479,13 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 
     current_frame_time = SDL_GetTicksNS();
     previous_frame_time = current_frame_time;
+
+    //set up shader that's going to be used to render editor related objects
+    Shader editor_shader ("shaders/editor_object_vertex.glsl",
+                          "shaders/editor_object_fragment.glsl");
+    editor_shader.use();
+    editor_shader.set_mat4("projection", projection);
+    scene_editor_ui.editor_shader = editor_shader;
 
 
     gen_color_pick_frame_buffer();
@@ -565,8 +607,7 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     std::clog << "model 3 color id: " << model3_color_id << std::endl;
     color_pick_map[model3_color_id] = context.objects.size() - 1;
 
-
-
+    std::clog << "--------------\n\n";
 
     light_shader.use();
 
@@ -712,14 +753,9 @@ void move_camera(u64 delta_time)
 
 void update_camera(u64 delta_time)
 {
-
     move_camera(delta_time);
 
-    //update view matrix
-    float radius = 10.0F;
-
     view = glm::mat4(1.0F);
-
     view = glm::lookAt(camera.position, camera.position + camera.front, camera.up);
 
     for (auto& shader : context.shaders)
@@ -728,16 +764,8 @@ void update_camera(u64 delta_time)
         shader.set_mat4("view", view);
     }
 
-    //debug camera position stuff
-    static u64 delta_time_acc = 0;
-    delta_time_acc += delta_time;
-    if (delta_time_acc >= 10e8)
-    {
-        // std::clog << "camera position: " << camera.position.x << ", " << camera.position.y << ", " << camera.position.z << std::endl;
-        // std::clog << "camera speed: " << camera.last_speed << std::endl;
-        delta_time_acc = 0;
-    }
-
+    scene_editor_ui.editor_shader.use();
+    scene_editor_ui.editor_shader.set_mat4("view", view);
 }
 
 void imgui_show_debug_info()
@@ -775,13 +803,13 @@ void imgui_show_inspector_panel()
 
     if (ImGui::Begin("Inspector", NULL, window_flags))
     {
-        assert(inspector.currently_inspecting_idx < context.objects.size());
+        assert(scene_editor_ui.inspector.currently_inspecting_idx < context.objects.size());
         ImGui::Text("Currently inspecting world object at index: %u",
-                    inspector.currently_inspecting_idx);
+                    scene_editor_ui.inspector.currently_inspecting_idx);
         ImGui::Separator();
 
         WorldObject& inspected_object =
-            context.objects[inspector.currently_inspecting_idx];
+            context.objects[scene_editor_ui.inspector.currently_inspecting_idx];
 
         //read only stuff first
         ImGui::Text("unique color pick: (%.2f, %.2f, %.2f)",
@@ -848,6 +876,27 @@ void recompute_model_matrices()
     }
 }
 
+void render_editor_objects()
+{
+    Shader& shader = scene_editor_ui.editor_shader;
+    shader.use();
+
+    const auto& x_axis_cue = scene_editor_ui.x_axis_cue;
+    shader.set_mat4("model", x_axis_cue.model_matrix);
+    shader.set_vec3("color", x_axis_cue.color);
+    model_draw(x_axis_cue.model, shader);
+
+    const auto& y_axis_cue = scene_editor_ui.y_axis_cue;
+    shader.set_mat4("model", y_axis_cue.model_matrix);
+    shader.set_vec3("color", y_axis_cue.color);
+    model_draw(y_axis_cue.model, shader);
+
+    const auto& z_axis_cue = scene_editor_ui.z_axis_cue;
+    shader.set_mat4("model", z_axis_cue.model_matrix);
+    shader.set_vec3("color", z_axis_cue.color);
+    model_draw(z_axis_cue.model, shader);
+}
+
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
     ImGui_ImplOpenGL3_NewFrame();
@@ -855,7 +904,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     ImGui::NewFrame();
 
     imgui_show_debug_info();
-    if (!inspector.hidden)
+    if (!scene_editor_ui.inspector.hidden)
         imgui_show_inspector_panel();
 
     current_frame_time = SDL_GetTicksNS();
@@ -888,7 +937,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         object_shader.set_float("material.shininess", 32.0F);
 
         //pulse selected object
-        if(inspector.currently_inspecting_idx == i)
+        if(scene_editor_ui.inspector.currently_inspecting_idx == i)
         {
             u64 current_time_ms = SDL_GetTicks();
             auto sin_time = (glm::sin(current_time_ms/400.0F) * 0.5) + 0.5;
@@ -915,6 +964,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
     }
 
+    render_editor_objects();
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -970,13 +1020,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             std::clog << "clicked on object at idx: " << world_object_idx << "\n";
 
             const WorldObject& clicked_object = context.objects[world_object_idx];
-            inspector.hidden = false;
-            inspector.currently_inspecting_idx = world_object_idx;
+            scene_editor_ui.inspector.hidden = false;
+            scene_editor_ui.inspector.currently_inspecting_idx = world_object_idx;
         }
         else
         {
             std::clog << "clicked on nothing\n";
-            inspector.reset();
+            scene_editor_ui.inspector.reset();
         }
 
         key_handler.left_click = false;
