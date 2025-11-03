@@ -46,9 +46,6 @@
 static SDL_Window* window = nullptr;
 static SDL_Renderer* renderer = nullptr;
 
-#define BUFFER_WIDTH 1920U
-#define BUFFER_HEIGHT 1080U
-
 // //vertices with colors
 // static constexpr float vertices[] = {
 //     0.5F, -0.5F, 0.0F, 1.0F, 0.0F, 0.0F,
@@ -376,44 +373,6 @@ void imgui_init()
     ImGui_ImplOpenGL3_Init();
 }
 
-void editor_objects_init()
-{
-    Model axis_arrow_model;
-    model_init(axis_arrow_model, "models/editor-models/axis_arrow.glb");
-
-    //x axis
-    glm::mat4 model_matrix (1.0F);
-    model_matrix = glm::translate(model_matrix, glm::vec3(0,4, 5));
-    model_matrix = glm::rotate(model_matrix, glm::radians(90.0F), glm::vec3(0,0,-1));
-    Axis x_axis_arrow {
-        .model_matrix = model_matrix,
-        .model = axis_arrow_model,
-        .color = glm::vec3(0.9, 0.3, 0.3)
-    };
-    scene_editor_ui.x_axis_cue = x_axis_arrow;
-
-    //y axis
-    model_matrix = glm::mat4(1.0F);
-    model_matrix = glm::translate(model_matrix, glm::vec3(0,4, 5));
-    Axis y_axis_arrow {
-        .model_matrix = model_matrix,
-        .model = axis_arrow_model,
-        .color = glm::vec3(0.3, 0.9, 0.3)
-    };
-    scene_editor_ui.y_axis_cue = y_axis_arrow;
-
-    //z axis
-    model_matrix = glm::mat4(1.0F);
-    model_matrix = glm::translate(model_matrix, glm::vec3(0,4, 5));
-    model_matrix = glm::rotate(model_matrix, glm::radians(90.0F), glm::vec3(1,0,0));
-    Axis z_axis_arrow {
-        .model_matrix = model_matrix,
-        .model = axis_arrow_model,
-        .color = glm::vec3(0.3, 0.3, 0.9)
-    };
-    scene_editor_ui.z_axis_cue = z_axis_arrow;
-}
-
 
 SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
 {
@@ -461,15 +420,16 @@ SDL_AppResult SDL_AppInit(void** app_state, int argc, char* argv[])
     //
     load_default_textures();
 
+    scene_editor_init(scene_editor_ui);
+
     Model default_cube_model;
     model_init_primitive_cube(default_cube_model,
                               {get_default_diffuse_texture(),
                               get_default_specular_texture()});
 
-    scene_editor_ui.inspector.reset();
-    editor_objects_init();
 
-    projection = glm::perspective(glm::radians(45.0F), 600.0F / 400.0F, 0.1F, 100.0F);
+    projection =
+        glm::perspective(glm::radians(45.0F), BUFFER_WIDTH / (float)BUFFER_HEIGHT, 0.1F, 100.0F);
 
     //setup camera
     camera = Camera {.position = glm::vec3(0.0F, 1.0F, 5.0F), };
@@ -876,26 +836,6 @@ void recompute_model_matrices()
     }
 }
 
-void render_editor_objects()
-{
-    Shader& shader = scene_editor_ui.editor_shader;
-    shader.use();
-
-    const auto& x_axis_cue = scene_editor_ui.x_axis_cue;
-    shader.set_mat4("model", x_axis_cue.model_matrix);
-    shader.set_vec3("color", x_axis_cue.color);
-    model_draw(x_axis_cue.model, shader);
-
-    const auto& y_axis_cue = scene_editor_ui.y_axis_cue;
-    shader.set_mat4("model", y_axis_cue.model_matrix);
-    shader.set_vec3("color", y_axis_cue.color);
-    model_draw(y_axis_cue.model, shader);
-
-    const auto& z_axis_cue = scene_editor_ui.z_axis_cue;
-    shader.set_mat4("model", z_axis_cue.model_matrix);
-    shader.set_vec3("color", z_axis_cue.color);
-    model_draw(z_axis_cue.model, shader);
-}
 
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
@@ -964,7 +904,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         glDrawArrays(GL_TRIANGLES, 0, N_CUBE_VERTICES);
     }
 
-    render_editor_objects();
+    if(scene_editor_ui.currently_selected_obj != nullptr)
+    {
+        scene_editor_update_axis_cues(scene_editor_ui);
+        scene_editor_render_objects(scene_editor_ui);
+    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -1019,9 +963,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
             std::clog << "clicked on object at idx: " << world_object_idx << "\n";
 
-            const WorldObject& clicked_object = context.objects[world_object_idx];
+            WorldObject& clicked_object = context.objects[world_object_idx];
             scene_editor_ui.inspector.hidden = false;
             scene_editor_ui.inspector.currently_inspecting_idx = world_object_idx;
+            scene_editor_ui.currently_selected_obj = &clicked_object;
         }
         else
         {

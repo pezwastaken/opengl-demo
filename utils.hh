@@ -12,6 +12,9 @@
 using u32 = uint32_t;
 using u64 = uint64_t;
 
+#define BUFFER_WIDTH 1920U
+#define BUFFER_HEIGHT 1080U
+
 #define TODO assert(false)
 #define UNREACHABLE assert(false)
 
